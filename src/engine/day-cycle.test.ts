@@ -29,6 +29,17 @@ describe('classic travel and settlement', () => {
       .toMatchObject({ ok: false, state, error: { code: 'FEATURE_UNAVAILABLE' } });
   });
 
+  it('requires queued events to be acknowledged before another travel', () => {
+    const state = classicState({ locationId: 'xizhimen', pendingEvents: [{
+      id: 'notice', kind: 'system', title: 'Notice', body: 'Notice', artId: 'notice',
+    }] });
+    const rng = quietRolls();
+    expect(travel(state, 'fuxingmen', classicContent, rng))
+      .toMatchObject({ ok: false, state, error: { code: 'EVENT_PENDING' } });
+    expect(rng.state).toBe(0);
+    expect(travel(acknowledgeEvent(state), 'fuxingmen', classicContent, rng).ok).toBe(true);
+  });
+
   it('queues market, health and money events while continuing every settlement step', () => {
     const rolls = Array(48).fill(0.998);
     rolls[11] = 0; // toy-demand
@@ -50,11 +61,12 @@ describe('classic travel and settlement', () => {
     const state = settleDay(classicState({ bank: 0 }), classicContent, rng);
     expect(state.bank).toBe(0);
     expect(state.pendingEvents).toEqual([]);
-    expect(rng.state).toBe(46);
+    expect(rng.state).toBe(47); // the disabled hacker event still consumes its roll
+    expect(settleDay(classicState(), classicContent, quietRolls()).rngState).toBe(49);
   });
 
   it('continues market rolls after an event targets an omitted good', () => {
-    const rolls = Array(48).fill(0.998); // cosmetics is the omitted good
+    const rolls = Array(49).fill(0.998); // cosmetics is the omitted good
     rolls[11] = 0; // toy-demand
     rolls[18] = 0; // cosmetics-celebrity, ignored
     rolls[19] = 0; // liquor-rush
@@ -65,7 +77,7 @@ describe('classic travel and settlement', () => {
   });
 
   it('adds a forced-purchase lot and debt after interest', () => {
-    const rolls = Array(48).fill(0.998);
+    const rolls = Array(49).fill(0.998);
     rolls[28] = 0; // forced-phone
     const state = settleDay(classicState({ debt: 5500 }), classicContent, new ScriptedRng(rolls));
     expect(state.debt).toBe(8550);
@@ -84,12 +96,23 @@ describe('classic travel and settlement', () => {
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'hospitalization']);
   });
 
+  it('still hospitalizes at day 37 when health drops below the threshold', () => {
+    const rolls = Array(52).fill(0.998);
+    rolls[29] = 0; // street-attack
+    rolls[30] = 0; // one hospital day
+    rolls[31] = 0; // nearby place
+    rolls[32] = 0; // 1000 bill
+    const state = settleDay(classicState({ day: 37, health: 86, debt: 0 }), classicContent, new ScriptedRng(rolls));
+    expect(state).toMatchObject({ day: 39, health: 93, debt: 1000, status: 'playing' });
+    expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'hospitalization', 'departure-warning']);
+  });
+
   it('marks death below zero health and applies the high-debt health penalty', () => {
     const rolls = Array(48).fill(0.998);
-    rolls[26] = 0; // no omission rolls on day 39
+    rolls[29] = 0; // day 39 still has omission rolls
     const state = settleDay(classicState({ day: 38, health: 2, debt: 100_000 }), classicContent, new ScriptedRng(rolls));
     expect(state).toMatchObject({ day: 39, health: -31, status: 'lost' });
-    expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'debt-penalty', 'death']);
+    expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'death', 'debt-penalty']);
   });
 
   it('exposes every good on the final day and sells all remaining lots', () => {
@@ -102,30 +125,43 @@ describe('classic travel and settlement', () => {
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['journey-complete', 'auto-liquidation']);
   });
 
-  it('exposes all goods on arrival at day 39 and loses on a nonpositive final score', () => {
+  it('keeps normal omissions on arrival at day 39 and loses on a nonpositive final score', () => {
     const day39 = settleDay(classicState({ day: 38, health: 100, debt: 0 }), classicContent, quietRolls());
-    expect(Object.keys(day39.market)).toHaveLength(classicContent.goods.length);
+    expect(Object.keys(day39.market)).toHaveLength(classicContent.goods.length - 1);
+    expect(day39.market.cosmetics).toBeUndefined();
     expect(day39.pendingEvents.map((event) => event.id)).toEqual(['departure-warning']);
 
     const final = settleDay(classicState({ day: 39, cash: 0, bank: 0, wallet: 0, debt: 100 }), classicContent, quietRolls());
     expect(final).toMatchObject({ day: 40, finalScore: -110, status: 'lost' });
   });
 
+  it('liquidates and scores on day 40 even when a health event kills the player', () => {
+    const rolls = Array(48).fill(0.998);
+    rolls[26] = 0; // street-attack after the final all-goods price rolls
+    rolls[27] = 0; // beggar after the fatal health event
+    const state = settleDay(classicState({
+      day: 39, health: 2, cash: 2050, bank: 0, wallet: 0, debt: 0,
+      inventory: { vcd: { quantity: 2, averageCost: 5 } },
+    }), classicContent, new ScriptedRng(rolls));
+    expect(state).toMatchObject({ day: 40, health: -1, inventory: {}, cash: 1908, finalScore: 1908, status: 'lost' });
+    expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'death', 'beggar', 'journey-complete', 'auto-liquidation']);
+  });
+
   it('replays five classic travels with stable balances, lots and event IDs', () => {
-    const rolls = Array(222).fill(0.998);
+    const rolls = Array(226).fill(0.998);
     rolls[11] = 0; // day 1 toy-demand
     rolls[29] = 0; // day 1 street-attack
     rolls[30] = 0; // day 1 beggar
-    rolls[57] = 0; // day 2 free-cigarettes
-    rolls[76] = 0; // day 2 fees
+    rolls[58] = 0; // day 2 free-cigarettes
+    rolls[77] = 0; // day 2 fees
     const rng = new ScriptedRng(rolls);
     const targets = ['fuxingmen', 'jianguomen', 'xizhimen', 'dongzhimen', 'beijingzhan'];
     const expected = [
       { day: 2, cash: 1800, bank: 1010, debt: 6050, health: 97, cigarettes: 2, events: ['toy-demand', 'street-attack', 'beggar'] },
-      { day: 3, cash: 1800, bank: 850, debt: 6655, health: 97, cigarettes: 8, events: ['toy-demand', 'street-attack', 'beggar', 'free-cigarettes', 'fees'] },
-      { day: 4, cash: 1800, bank: 858, debt: 7320, health: 97, cigarettes: 8, events: ['toy-demand', 'street-attack', 'beggar', 'free-cigarettes', 'fees'] },
-      { day: 5, cash: 1800, bank: 866, debt: 8052, health: 97, cigarettes: 8, events: ['toy-demand', 'street-attack', 'beggar', 'free-cigarettes', 'fees'] },
-      { day: 6, cash: 1800, bank: 874, debt: 8857, health: 97, cigarettes: 8, events: ['toy-demand', 'street-attack', 'beggar', 'free-cigarettes', 'fees'] },
+      { day: 3, cash: 1800, bank: 850, debt: 6655, health: 97, cigarettes: 8, events: ['free-cigarettes', 'fees'] },
+      { day: 4, cash: 1800, bank: 858, debt: 7320, health: 97, cigarettes: 8, events: [] },
+      { day: 5, cash: 1800, bank: 866, debt: 8052, health: 97, cigarettes: 8, events: [] },
+      { day: 6, cash: 1800, bank: 874, debt: 8857, health: 97, cigarettes: 8, events: [] },
     ];
     let state = classicState({
       day: 1, locationId: 'xizhimen', cash: 2050, bank: 1000, debt: 5500,
@@ -135,10 +171,12 @@ describe('classic travel and settlement', () => {
       const result = travel(state, targetId, classicContent, rng);
       expect(result.ok).toBe(true);
       state = result.state;
-      return {
+      const snapshot = {
         day: state.day, cash: state.cash, bank: state.bank, debt: state.debt, health: state.health,
         cigarettes: state.inventory.cigarettes?.quantity, events: state.pendingEvents.map((event) => event.id),
       };
+      while (state.pendingEvents.length > 0) state = acknowledgeEvent(state);
+      return snapshot;
     });
     expect(replay).toEqual(expected);
     expect(state.inventory.cigarettes).toEqual({ quantity: 8, averageCost: 100 });

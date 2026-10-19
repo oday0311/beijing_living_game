@@ -47,4 +47,18 @@ describe('command reducer', () => {
     expect(result).toMatchObject({ ok: true, state: { pendingEvents: [] } });
     expect(state.pendingEvents).toHaveLength(1);
   });
+
+  it('does not advance time while a queued event awaits acknowledgement', () => {
+    const state = {
+      ...createGame(classicContent, { playerName: 'Player', seed: 1, identityId: null }),
+      locationId: 'xizhimen',
+      pendingEvents: [{ id: 'notice', kind: 'system' as const, title: 'Notice', body: 'Notice', artId: 'notice' }],
+    };
+    const blocked = reduceGameState(state, { type: 'TRAVEL', targetId: 'fuxingmen' }, classicContent);
+    expect(blocked).toMatchObject({ ok: false, state, error: { code: 'EVENT_PENDING' } });
+    expect(blocked.state).toBe(state);
+    const acknowledged = reduceGameState(state, { type: 'ACK_EVENT' }, classicContent);
+    const travelled = reduceGameState(acknowledged.state, { type: 'TRAVEL', targetId: 'fuxingmen' }, classicContent);
+    expect(travelled).toMatchObject({ ok: true, state: { day: 2, locationId: 'fuxingmen' } });
+  });
 });

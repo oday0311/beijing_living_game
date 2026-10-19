@@ -26,7 +26,7 @@ export function acknowledgeEvent(state: GameState): GameState {
 }
 
 export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource): GameState {
-  const market = generateMarket(pack, rng, { ...state, day: state.day + 1 });
+  const market = generateMarket(pack, rng, state);
   let cash = state.cash;
   let bank = state.bank + Math.trunc(state.bank * 0.01);
   let debt = state.debt + Math.trunc(state.debt * 0.1);
@@ -62,7 +62,7 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
   }
 
   // The original game checks remaining days before advancing the current day.
-  if (health < 85 && state.day < 37) {
+  if (health < 85 && state.day < 38) {
     hospitalDays = 1 + rng.int(2);
     rng.int(29); // Location flavor text has no state effect, but consumes a roll.
     const bill = hospitalDays * (1000 + rng.int(8500));
@@ -71,6 +71,10 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
     pendingEvents.push(systemEvent('hospitalization', `Hospitalized for ${hospitalDays} day(s); debt increased by ${bill}.`));
   } else if (health > 0 && health < 20) {
     pendingEvents.push(systemEvent('health-crisis', 'Health is critically low.'));
+  }
+  const diedDuringHealth = health < 0;
+  if (diedDuringHealth) {
+    pendingEvents.push(systemEvent('death', 'The journey ended after a fatal loss of health.'));
   }
 
   for (const event of pack.events.money) {
@@ -87,10 +91,14 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
     }
     break;
   }
+  if (pack.mode === 'classic') rng.int(1000);
 
   if (debt > 100_000) {
     health -= 30;
     pendingEvents.push(systemEvent('debt-penalty', 'High debt caused a 30 point health penalty.'));
+    if (health < 0 && !diedDuringHealth) {
+      pendingEvents.push(systemEvent('death', 'The journey ended after a fatal loss of health.'));
+    }
   }
 
   const day = Math.min(state.daysTotal, state.day + 1 + hospitalDays);
@@ -102,8 +110,8 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
   let finalScore = state.finalScore;
   if (health < 0) {
     status = 'lost';
-    pendingEvents.push(systemEvent('death', 'The journey ended after a fatal loss of health.'));
-  } else if (day === state.daysTotal) {
+  }
+  if (day === state.daysTotal) {
     pendingEvents.push(systemEvent('journey-complete', 'Forty days have passed.'));
     const remaining = Object.entries(inventory).filter(([, lot]) => lot.quantity > 0);
     if (remaining.length > 0) {
@@ -112,7 +120,7 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
     }
     for (const id of Object.keys(inventory)) delete inventory[id];
     finalScore = cash + bank + state.wallet - debt;
-    status = finalScore > 0 ? 'won' : 'lost';
+    status = health >= 0 && finalScore > 0 ? 'won' : 'lost';
   }
 
   return {
@@ -124,6 +132,7 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
 export function travel(state: GameState, targetId: string, pack: ContentPack, rng: RandomSource): CommandResult {
   if (state.status !== 'playing') return failure(state, 'GAME_ENDED', 'The game has ended.');
   if (pack.mode !== 'classic') return failure(state, 'FEATURE_UNAVAILABLE', 'Modern day rules are not available yet.');
+  if (state.pendingEvents.length > 0) return failure(state, 'EVENT_PENDING', 'Acknowledge pending events before travelling.');
   if (targetId === state.locationId) return failure(state, 'SAME_LOCATION', 'Choose another station.');
   if (!pack.locations.some((location) => location.id === targetId)) {
     return failure(state, 'UNKNOWN_LOCATION', 'This station does not exist.');
