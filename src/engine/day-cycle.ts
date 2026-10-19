@@ -49,6 +49,9 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
         journalEntries = journal(settled, 'Auto-liquidation', 'Remaining inventory sold at final prices.', { cash: proceeds }, day).journal;
       }
     }
+    if (settled.health >= 0 && day === state.daysTotal - 1 && state.day < day) {
+      pendingEvents = [...pendingEvents, systemEvent('departure-warning', 'Tomorrow is the last day in Beijing.')];
+    }
     return refreshTrendForecast({ ...settled, day, cash, inventory, market, pendingEvents, journal: journalEntries, finalScore, status,
       trends: ageTrends(settled.trends), rngState: rng.state,
       modern: settled.modern ? { ...settled.modern,

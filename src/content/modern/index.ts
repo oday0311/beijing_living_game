@@ -122,7 +122,7 @@ const money: EventDefinition[] = [
   event('money/wallet-freeze', 'money', '钱包冻结一天', '钱包今天例行核对，暂时只能看不能付。', { kind: 'wallet-freeze', target: 'walletFrozenDays', amount: 1, duration: 1 }),
   event('money/subscription-mistap', 'money', '误点订阅', '手指比大脑快一步，订阅服务先发来了欢迎消息。', { kind: 'account-delta', target: 'wallet', amount: -88 }),
   event('money/bank-promotion', 'money', '银行优惠', '账户里出现一笔优惠返还，备注写得比活动规则还简洁。', { kind: 'account-delta', target: 'bank', amount: 200 }),
-  event('money/repayment-reward', 'money', '准时还款奖励', '准时还款被系统记了一笔，信用记录又整齐了一点。', { kind: 'account-delta', target: 'bank', amount: 100, condition: 'on-time-repayment' }),
+  event('money/repayment-reward', 'money', '准时还款奖励', '准时还款被系统记了一笔，信用记录又整齐了一点。', { kind: 'counter-delta', target: 'onTimeRepayments', amount: 1 }),
   event('money/refund-arrives', 'money', '退款到账', '那笔差点忘记的退款到账了，钱包悄悄变厚。', { kind: 'account-delta', target: 'wallet', amount: 160 }),
   event('money/credit-review', 'money', '信用复核', '例行复核给信用等级降了一档，提醒写得格外客气。', { kind: 'credit-tier-delta', target: 'credit', amount: -1 }),
   event('money/rent-relief', 'money', '租金减免', '房租结算时少了一笔，连收据看起来都轻快。', { kind: 'account-delta', target: 'cash', amount: 300 }),
@@ -133,7 +133,7 @@ const identity: EventDefinition[] = [
   event('identity/courier-route', 'identity', '跑腿骑手：熟路', '常跑的路今天格外顺，下次乘车免付车费。', { kind: 'free-transit-use', target: 'courier', amount: 1 }),
   event('identity/designer-radar', 'identity', '自由设计师：灵感雷达', '逛完一圈市集，他已从招牌和话题里看出接下来几天的风向。', { kind: 'reveal-trends', target: 'designer', duration: 1 }),
   event('identity/shopkeeper-shelf', 'identity', '社区店主：巧置货架', '货架转个角度，原本拥挤的小店竟又宽敞了些。', { kind: 'capacity-bonus', target: 'shopkeeper', amount: 5, maxBonus: 25 }),
-  event('identity/graduate-review', 'identity', '应届毕业生：成长记录', '准时还款的记录换来一笔奖励，账本上的进步有了回声。', { kind: 'repayment-bonus', target: 'graduate', amount: 100, condition: 'on-time-repayment' }),
+  event('identity/graduate-review', 'identity', '应届毕业生：成长记录', '新的成长记录帮信用等级前进一步。', { kind: 'credit-tier-delta', target: 'graduate', amount: 1, condition: 'below-A' }),
 ];
 
 export const modernContent: ContentPack = {

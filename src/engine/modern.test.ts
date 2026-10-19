@@ -65,24 +65,61 @@ describe('modern mechanics', () => {
     expect(tiny).toMatchObject({ ok: true, state: { credit: 'C', modern: { repaidTowardDue: 1, onTimeRepayments: 0 } } });
     if (tiny.ok) {
       const completed = repayDebt(tiny.state, { amount: 29, account: 'cash' }, modernContent);
-      expect(completed).toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 2,
-        repaymentDueDay: 10, lastOnTimeRepaymentDay: 1 } } });
+      expect(completed).toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 0,
+        repaymentDueDay: 10, lastQualifiedRepaymentDay: 1, pendingQualifiedRepayment: true } } });
       if (completed.ok) {
         expect(repayDebt(completed.state, { amount: 1, account: 'cash' }, modernContent))
-          .toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 2 } } });
-        const secondWindow = { ...completed.state, day: 6 };
+          .toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 0 } } });
+        const settled = settleDay(completed.state, { ...stubPack, events: { market: [], health: [],
+          money: [], identity: [] } }, new SeededRng(1));
+        expect(settled).toMatchObject({ credit: 'C', modern: { onTimeRepayments: 2,
+          pendingQualifiedRepayment: false } });
+        const secondWindow = { ...settled, day: 6 };
         const upgraded = repayDebt(secondWindow, { amount: secondWindow.modern!.repaymentDueAmount, account: 'cash' }, modernContent);
-        expect(upgraded).toMatchObject({ ok: true, state: { credit: 'B', modern: { onTimeRepayments: 1 } } });
-        if (upgraded.ok) expect(upgraded.state.journal.at(-1)?.delta?.credit).toBe(1);
+        expect(upgraded).toMatchObject({ ok: true, state: { credit: 'C', modern: { pendingQualifiedRepayment: true } } });
+        if (upgraded.ok) expect(settleDay(upgraded.state, stubPack, new SeededRng(2)))
+          .toMatchObject({ credit: 'B', modern: { onTimeRepayments: 1 } });
       }
     }
     const reward = modernContent.events.money.find(({ id }) => id === 'money/repayment-reward')!;
     expect(applyEvent(state, reward)).toBe(state);
+    const eligible = { ...state, modern: { ...state.modern!, pendingQualifiedRepayment: true,
+      lastQualifiedRepaymentDay: state.day } };
+    const rewarded = applyEvent(eligible, reward);
+    expect(rewarded).toMatchObject({ credit: 'C', modern: { onTimeRepayments: 2,
+      pendingQualifiedRepayment: false } });
+    expect(applyEvent(rewarded, reward)).toBe(rewarded);
     const review = modernContent.events.money.find(({ id }) => id === 'money/credit-review')!;
     const reviewed = { ...state, credit: 'B' as const };
     expect(applyEvent(reviewed, review)).toBe(reviewed);
     expect(moveCredit('D', -1)).toBe('D');
     expect(moveCredit('S', 1)).toBe('S');
+  });
+
+  it('cannot earn multiple credit records by borrowing and repaying one unit on the same day', () => {
+    for (const identityId of [null, 'graduate']) {
+      let state = modernState({ credit: 'B', debt: 0, bank: 0, cash: 10, identityId });
+      const borrowed = borrowModern(state, 1);
+      expect(borrowed.ok).toBe(true);
+      if (!borrowed.ok) continue;
+      const first = repayDebt(borrowed.state, { amount: 1, account: 'cash' }, modernContent);
+      expect(first.ok).toBe(true);
+      if (!first.ok) continue;
+      state = first.state;
+      for (let index = 0; index < 4; index += 1) {
+        const newLoan = borrowModern(state, 1);
+        expect(newLoan.ok).toBe(true);
+        if (!newLoan.ok) break;
+        const paid = repayDebt(newLoan.state, { amount: 1, account: 'cash' }, modernContent);
+        expect(paid.ok).toBe(true);
+        if (!paid.ok) break;
+        state = paid.state;
+      }
+      expect(state.modern).toMatchObject({ lastQualifiedRepaymentDay: 1,
+        pendingQualifiedRepayment: true, onTimeRepayments: 0 });
+      expect(settleDay(state, stubPack, new SeededRng(1)).modern?.onTimeRepayments)
+        .toBe(identityId === 'graduate' ? 2 : 1);
+    }
   });
 
   it('penalizes an unpaid installment once after day five and journals it', () => {
@@ -137,13 +174,45 @@ describe('modern mechanics', () => {
 
   it('conditions the graduate identity reward on a qualifying repayment', () => {
     const event = modernContent.events.identity.find(({ id }) => id === 'identity/graduate-review')!;
-    const state = modernState({ identityId: 'graduate', debt: 300, cash: 300,
+    const state = modernState({ identityId: 'graduate', credit: 'C', debt: 300, cash: 300,
       modern: { ...modernState().modern!, repaymentDueDay: 5, repaymentDueAmount: 30 } });
     expect(applyIdentity(state, event)).toBe(state);
     const paid = repayDebt(state, { amount: 30, account: 'cash' }, modernContent);
     expect(paid.ok).toBe(true);
-    if (paid.ok) expect(applyIdentity(paid.state, event)).toMatchObject({ bank: state.bank + 100,
-      credit: state.credit, pendingEvents: [{ id: event.id }] });
+    if (paid.ok) {
+      const grown = applyIdentity(paid.state, event);
+      expect(grown).toMatchObject({ credit: 'B',
+        pendingEvents: [{ id: event.id }] });
+      expect(applyIdentity(grown, event)).toBe(grown);
+      expect(applyIdentity({ ...paid.state, credit: 'A' }, event)).toEqual({ ...paid.state, credit: 'A' });
+    }
+  });
+
+  it('consumes a qualifying repayment once when both credit events are selected', () => {
+    const reward = { ...modernContent.events.money.find(({ id }) => id === 'money/repayment-reward')!, frequency: 1 };
+    const growth = { ...modernContent.events.identity.find(({ id }) => id === 'identity/graduate-review')!, frequency: 1 };
+    const pack = { ...stubPack, identities: modernContent.identities,
+      events: { market: [], health: [], money: [reward], identity: [growth] } };
+    const state = modernState({ credit: 'C', debt: 300, cash: 300, identityId: 'graduate',
+      modern: { ...modernState().modern!, repaymentDueDay: 5, repaymentDueAmount: 30 } });
+    const payment = repayDebt(state, { amount: 30, account: 'cash' }, pack);
+    expect(payment.ok).toBe(true);
+    if (!payment.ok) return;
+    const next = settleDay(payment.state, pack, new SeededRng(1));
+    expect(next).toMatchObject({ credit: 'B', modern: { onTimeRepayments: 2,
+      pendingQualifiedRepayment: false, graduateGrowthDay: 1 } });
+    expect(next.pendingEvents.map(({ id }) => id)).toEqual([reward.id, growth.id]);
+    expect(next.journal.filter(({ title }) => title === reward.title)).toHaveLength(1);
+    expect(next.journal.filter(({ title }) => title === growth.title)).toHaveLength(1);
+    const following = settleDay({ ...next, pendingEvents: [] }, pack, new SeededRng(next.rngState));
+    expect(following).toMatchObject({ credit: 'B', modern: { onTimeRepayments: 2 } });
+    expect(following.pendingEvents).toEqual([]);
+  });
+
+  it('warns on arrival at modern day 39', () => {
+    const state = settleDay(modernState({ day: 38 }), stubPack, new SeededRng(1));
+    expect(state).toMatchObject({ day: 39 });
+    expect(state.pendingEvents.map(({ id }) => id)).toEqual(['departure-warning']);
   });
 
   it('sets first-day weather and journals travel, interest, events and liquidation', () => {

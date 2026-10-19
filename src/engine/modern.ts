@@ -101,7 +101,8 @@ function addTrend(state: GameState, event: EventDefinition, effect: EffectDefini
 export function applyIdentity(state: GameState, event?: EventDefinition, eventDay = state.day): GameState {
   if (!event || event.effect.target !== state.identityId || !state.modern) return state;
   const effect = event.effect;
-  if (effect.condition === 'on-time-repayment' && state.modern.lastOnTimeRepaymentDay !== state.day) return state;
+  if (effect.kind === 'credit-tier-delta' && (state.modern.lastQualifiedRepaymentDay !== state.day
+    || state.modern.graduateGrowthDay === state.day || state.credit === 'A' || state.credit === 'S')) return state;
   let next = state;
   if (effect.kind === 'free-transit-use') {
     next = { ...state, modern: { ...state.modern, freeTransitUses: state.modern.freeTransitUses + (effect.amount ?? 0) } };
@@ -111,8 +112,9 @@ export function applyIdentity(state: GameState, event?: EventDefinition, eventDa
     const bonus = Math.min(effect.maxBonus ?? 0, state.modern.shopkeeperCapacityBonus + (effect.amount ?? 0));
     next = { ...state, capacity: state.capacity + bonus - state.modern.shopkeeperCapacityBonus,
       modern: { ...state.modern, shopkeeperCapacityBonus: bonus } };
-  } else if (effect.kind === 'repayment-bonus') {
-    next = { ...state, bank: state.bank + (effect.amount ?? 0) };
+  } else if (effect.kind === 'credit-tier-delta') {
+    next = { ...state, credit: moveCredit(state.credit, effect.amount ?? 0),
+      modern: { ...state.modern, graduateGrowthDay: state.day } };
   }
   next = { ...next, pendingEvents: [...next.pendingEvents, visible(event)] };
   return refreshTrendForecast(journal(next, event.title, event.body,
@@ -129,7 +131,9 @@ export function applyWeather(state: GameState, weather: WeatherDefinition, pack:
 
 export function applyEvent(state: GameState, event: EventDefinition, eventDay = state.day): GameState {
   const effect = event.effect;
-  if (effect.condition === 'on-time-repayment' && state.modern?.lastOnTimeRepaymentDay !== state.day) return state;
+  if (effect.condition === 'on-time-repayment' && state.modern?.lastQualifiedRepaymentDay !== state.day) return state;
+  if (effect.kind === 'counter-delta' && effect.target === 'onTimeRepayments'
+    && (!state.modern?.pendingQualifiedRepayment || state.modern.lastQualifiedRepaymentDay !== state.day)) return state;
   if (effect.kind === 'credit-tier-delta' && event.id === 'money/credit-review') return state;
   let next = state;
   if (effect.kind === 'price-trend' || effect.kind === 'category-trend' || effect.kind === 'event-weight') {
@@ -142,6 +146,8 @@ export function applyEvent(state: GameState, event: EventDefinition, eventDay = 
     next = { ...next, wallet: Math.max(0, next.wallet - (effect.amount ?? 0)) };
   } else if (effect.kind === 'wallet-freeze') {
     next = { ...next, walletFrozenDays: Math.max(next.walletFrozenDays, effect.duration ?? effect.amount ?? 0) };
+  } else if (effect.kind === 'counter-delta' && effect.target === 'onTimeRepayments') {
+    next = completeQualifiedRepayment(next);
   } else if (effect.kind === 'credit-tier-delta') {
     next = { ...next, credit: moveCredit(next.credit, effect.amount ?? 0),
       modern: next.modern ? { ...next.modern, onTimeRepayments: 0 } : null };
@@ -155,6 +161,9 @@ export function applyEvent(state: GameState, event: EventDefinition, eventDay = 
     if (next[account] !== state[account]) delta[account] = next[account] - state[account];
   }
   if (next.credit !== state.credit) delta.credit = tiers.indexOf(next.credit) - tiers.indexOf(state.credit);
+  if (next.modern && state.modern && next.modern.onTimeRepayments !== state.modern.onTimeRepayments) {
+    delta.onTimeRepayments = next.modern.onTimeRepayments - state.modern.onTimeRepayments;
+  }
   return journal(next, event.title, effect.journalNotice ?? event.body,
     Object.keys(delta).length ? delta : undefined, eventDay);
 }
@@ -165,6 +174,12 @@ export function advanceRepayments(state: GameState, count: number): GameState {
   const steps = Math.floor(total / 3);
   return { ...state, credit: moveCredit(state.credit, steps),
     modern: { ...state.modern, onTimeRepayments: total % 3 } };
+}
+
+export function completeQualifiedRepayment(state: GameState): GameState {
+  if (!state.modern?.pendingQualifiedRepayment || state.modern.lastQualifiedRepaymentDay !== state.day) return state;
+  const advanced = advanceRepayments(state, 1);
+  return { ...advanced, modern: { ...advanced.modern!, pendingQualifiedRepayment: false } };
 }
 
 export function borrowModern(state: GameState, amount: number): CommandResult {
@@ -186,11 +201,12 @@ export function recordRepayment(state: GameState, amount: number, remainingDebt:
   const modern = state.modern;
   if (!modern || modern.repaymentDueDay === null) return state;
   if (remainingDebt === 0) {
-    const qualified = state.day <= modern.repaymentDueDay && state.day >= modern.repaymentDueDay - REPAYMENT_PERIOD + 1;
-    const credited = qualified ? advanceRepayments(state, 1) : state;
-    return { ...credited, modern: { ...credited.modern!, repaymentDueDay: null,
+    const qualified = modern.lastQualifiedRepaymentDay !== state.day
+      && state.day <= modern.repaymentDueDay && state.day >= modern.repaymentDueDay - REPAYMENT_PERIOD + 1;
+    return { ...state, modern: { ...modern, repaymentDueDay: null,
       repaymentDueAmount: 0, repaidTowardDue: 0,
-      lastOnTimeRepaymentDay: qualified ? state.day : modern.lastOnTimeRepaymentDay } };
+      lastQualifiedRepaymentDay: qualified ? state.day : modern.lastQualifiedRepaymentDay,
+      pendingQualifiedRepayment: qualified || modern.pendingQualifiedRepayment } };
   }
   const inWindow = state.day >= modern.repaymentDueDay - REPAYMENT_PERIOD + 1 && state.day <= modern.repaymentDueDay;
   if (!inWindow) return state;
@@ -198,16 +214,19 @@ export function recordRepayment(state: GameState, amount: number, remainingDebt:
   if (progress < modern.repaymentDueAmount) {
     return { ...state, modern: { ...modern, repaidTowardDue: progress } };
   }
-  const credited = advanceRepayments(state, 1);
-  return { ...credited, modern: { ...credited.modern!, repaymentDueDay: modern.repaymentDueDay + REPAYMENT_PERIOD,
-    repaymentDueAmount: installmentAmount(remainingDebt), repaidTowardDue: 0, lastOnTimeRepaymentDay: state.day } };
+  const qualified = modern.lastQualifiedRepaymentDay !== state.day;
+  return { ...state, modern: { ...modern, repaymentDueDay: modern.repaymentDueDay + REPAYMENT_PERIOD,
+    repaymentDueAmount: installmentAmount(remainingDebt), repaidTowardDue: 0,
+    lastQualifiedRepaymentDay: qualified ? state.day : modern.lastQualifiedRepaymentDay,
+    pendingQualifiedRepayment: qualified || modern.pendingQualifiedRepayment } };
 }
 
 export function penalizeOverdue(state: GameState, review: EventDefinition | undefined): GameState {
   if (!state.modern || state.modern.repaymentDueDay === null
     || state.day + 1 <= state.modern.repaymentDueDay || state.debt <= 0) return state;
   const next = { ...state, credit: moveCredit(state.credit, -1), modern: { ...state.modern,
-    onTimeRepayments: 0, overduePenalties: state.modern.overduePenalties + 1,
+    onTimeRepayments: 0, pendingQualifiedRepayment: false,
+    overduePenalties: state.modern.overduePenalties + 1,
     repaymentDueDay: state.modern.repaymentDueDay + REPAYMENT_PERIOD,
     repaymentDueAmount: installmentAmount(state.debt), repaidTowardDue: 0 } };
   const notice = review ? visible(review) : {
@@ -252,6 +271,15 @@ export function settleModernDay(state: GameState, pack: ContentPack, rng: Random
     if (triggeredModern(event, 'money', pack, next.identityId, rng)) {
       const applied = applyEvent(next, event, state.day + 1);
       if (applied !== next) { next = applied; break; }
+    }
+  }
+  if (next.modern?.pendingQualifiedRepayment) {
+    const credited = completeQualifiedRepayment(next);
+    if (credited !== next) {
+      next = journal(credited, 'On-time repayment', 'A qualifying repayment was recorded.', {
+        ...(credited.credit !== next.credit ? { credit: tiers.indexOf(credited.credit) - tiers.indexOf(next.credit) } : {}),
+        onTimeRepayments: credited.modern!.onTimeRepayments - next.modern!.onTimeRepayments,
+      }, state.day + 1);
     }
   }
   for (const event of pack.events.identity) {

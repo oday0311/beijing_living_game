@@ -212,7 +212,7 @@ describe('modern content', () => {
     expect(effects['money/wallet-freeze']).toEqual({ kind: 'wallet-freeze', target: 'walletFrozenDays', amount: 1, duration: 1 });
     expect(effects['money/subscription-mistap']).toEqual({ kind: 'account-delta', target: 'wallet', amount: -88 });
     expect(effects['money/bank-promotion']).toEqual({ kind: 'account-delta', target: 'bank', amount: 200 });
-    expect(effects['money/repayment-reward']).toEqual({ kind: 'account-delta', target: 'bank', amount: 100, condition: 'on-time-repayment' });
+    expect(effects['money/repayment-reward']).toEqual({ kind: 'counter-delta', target: 'onTimeRepayments', amount: 1 });
     expect(effects['money/refund-arrives']).toEqual({ kind: 'account-delta', target: 'wallet', amount: 160 });
     expect(effects['money/credit-review']).toEqual({ kind: 'credit-tier-delta', target: 'credit', amount: -1 });
     expect(effects['money/rent-relief']).toEqual({ kind: 'account-delta', target: 'cash', amount: 300 });
@@ -220,6 +220,6 @@ describe('modern content', () => {
     expect(effects['identity/courier-route']).toEqual({ kind: 'free-transit-use', target: 'courier', amount: 1 });
     expect(effects['identity/designer-radar']).toEqual({ kind: 'reveal-trends', target: 'designer', duration: 1 });
     expect(effects['identity/shopkeeper-shelf']).toEqual({ kind: 'capacity-bonus', target: 'shopkeeper', amount: 5, maxBonus: 25 });
-    expect(effects['identity/graduate-review']).toEqual({ kind: 'repayment-bonus', target: 'graduate', amount: 100, condition: 'on-time-repayment' });
+    expect(effects['identity/graduate-review']).toEqual({ kind: 'credit-tier-delta', target: 'graduate', amount: 1, condition: 'below-A' });
   });
 });
