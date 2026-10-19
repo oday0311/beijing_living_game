@@ -23,7 +23,7 @@ export interface GameSession {
   continueGame: () => void;
   restoreSavedGame: () => void;
   importSavedGame: (raw: string) => boolean;
-  abandonGame: () => void;
+  abandonGame: () => boolean;
   returnToStart: () => void;
   clearError: () => void;
   accelerateToFinalDayForTest: () => void;

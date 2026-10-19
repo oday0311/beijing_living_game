@@ -21,11 +21,12 @@ const tabs = [
 ] as const;
 type Tab = typeof tabs[number]['id'];
 
-export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSettings, soundEnabled, onToggleSound, onShowSettlement }: {
+export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSettings, onReturnToEntry, soundEnabled, onToggleSound, onShowSettlement }: {
   onShowScores: () => void; onShowAbout: () => void; onShowHelp: () => void; onShowSettings: () => void;
+  onReturnToEntry: () => void;
   soundEnabled: boolean; onToggleSound: () => void; onShowSettlement: () => void;
 }) {
-  const { state, dispatch, returnToStart } = useGame();
+  const { state, dispatch } = useGame();
   const [tab, setTab] = useState<Tab>('market');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [trade, setTrade] = useState<'buy' | 'sell' | null>(null);
@@ -75,7 +76,7 @@ export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSetting
         <button type="button" title="设置" aria-label="设置" onClick={onShowSettings}><Settings2 size={19} /></button>
         <button ref={journalButton} type="button" title="旅程日记" aria-label="旅程日记" onClick={() => setJournalOpen(true)}><BookOpen size={19} /></button>
         <button type="button" title={soundEnabled ? '关闭音效' : '开启音效'} aria-label={soundEnabled ? '关闭音效' : '开启音效'} aria-pressed={soundEnabled} onClick={onToggleSound}>{soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}</button>
-        <button type="button" className="back-link" onClick={returnToStart}><ArrowLeft size={17} /> 返回入口</button>
+        <button type="button" className="back-link" onClick={onReturnToEntry}><ArrowLeft size={17} /> 返回入口</button>
       </nav></header>
     <div className="game-content desk-content">
       <div className="game-title-row"><div><p className="eyebrow">{state.mode === 'classic' ? '经典模式' : '新北京模式'} · 第 {state.day} / {state.daysTotal} 天</p>

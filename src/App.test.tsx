@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,7 +11,7 @@ import { renderAppWithState } from './test/render-game';
 
 describe('App', () => {
   beforeEach(() => window.localStorage.clear());
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it('starts a classic session and restores it after mounting again', async () => {
     const user = userEvent.setup();
@@ -63,7 +63,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('角色姓名'), '新档');
     await user.click(screen.getByRole('button', { name: '开始游戏' }));
     await user.click(screen.getByRole('button', { name: '返回入口' }));
-    expect(screen.getByRole('button', { name: '继续游戏' })).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '继续游戏' })).toHaveFocus();
   });
 
   it('consumes focus after starting from a damaged save', async () => {
@@ -76,7 +76,49 @@ describe('App', () => {
     await user.type(screen.getByLabelText('角色姓名'), '新档');
     await user.click(screen.getByRole('button', { name: '开始游戏' }));
     await user.click(screen.getByRole('button', { name: '返回入口' }));
-    expect(screen.getByRole('button', { name: '继续游戏' })).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '继续游戏' })).toHaveFocus();
+  });
+
+  it('focuses the entry once after settlement restart in StrictMode', async () => {
+    const user = userEvent.setup();
+    const storage = memoryStorage();
+    const finished = classicState({ day: 40, status: 'won', finalScore: 100, cash: 100, debt: 0 });
+    saveGame(finished, storage);
+    render(<StrictMode><App storage={storage} initialState={finished} /></StrictMode>);
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    await user.click(within(screen.getByRole('dialog', { name: '本局结算' })).getByRole('button', { name: '重新开始' }));
+    expect(screen.getByLabelText('角色姓名')).toHaveFocus();
+    expect(focus.mock.instances.filter((element) => element instanceof HTMLElement && element.id === 'player-name')).toHaveLength(1);
+  });
+
+  it('restores settlement when continuing a finished game after returning to entry', async () => {
+    const user = userEvent.setup();
+    const storage = memoryStorage();
+    const finished = classicState({ day: 40, status: 'won', finalScore: 100, cash: 100, debt: 0 });
+    saveGame(finished, storage);
+    render(<App storage={storage} initialState={finished} />);
+    await user.click(within(screen.getByRole('dialog', { name: '本局结算' })).getByRole('button', { name: '返回入口' }));
+    expect(screen.getByRole('button', { name: '继续游戏' })).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: '继续游戏' }));
+    expect(screen.getByRole('dialog', { name: '本局结算' })).toBeInTheDocument();
+  });
+
+  it('focuses the entry after settings reset but not after cancellation', async () => {
+    const user = userEvent.setup();
+    const storage = memoryStorage();
+    const state = classicState();
+    saveGame(state, storage);
+    render(<StrictMode><App storage={storage} initialState={state} /></StrictMode>);
+    await user.click(screen.getByRole('button', { name: '设置' }));
+    await user.click(screen.getByRole('button', { name: '重置本局' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('角色姓名')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '重置本局' }));
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    await user.click(screen.getByRole('button', { name: '确认重置' }));
+    expect(screen.getByLabelText('角色姓名')).toHaveFocus();
+    expect(focus.mock.instances.filter((element) => element instanceof HTMLElement && element.id === 'player-name')).toHaveLength(1);
   });
 
   it('links each tab to its panel and follows the keyboard tab pattern', async () => {

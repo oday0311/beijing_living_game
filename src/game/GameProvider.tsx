@@ -157,18 +157,19 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
     }
   }, [storage, storageAvailable, updateLoad, updateState]);
 
-  const abandonGame = useCallback(() => {
+  const abandonGame = useCallback((): boolean => {
     if (storageAvailable) {
       try {
         clearCurrentGame(storage);
       } catch {
         setError('无法清除当前存档，请检查浏览器存储权限。');
-        return;
+        return false;
       }
     }
     updateState(null);
     updateLoad(storageAvailable ? { kind: 'empty' } : { kind: 'unavailable' });
     setError(null);
+    return true;
   }, [storage, storageAvailable, updateLoad, updateState]);
 
   const returnToStart = useCallback(() => {

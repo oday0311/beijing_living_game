@@ -61,6 +61,10 @@ for (const mode of ['classic', 'modern'] as const) {
     await assertLayout(page);
     await page.screenshot({ path: `test-results/${mode}-${testInfo.project.name}-board.png`, fullPage: true });
 
+    await page.getByRole('navigation', { name: '页面导航' }).getByRole('button', { name: '返回入口' }).click();
+    await expect(page.getByRole('button', { name: '继续游戏' })).toBeFocused();
+    await page.getByRole('button', { name: '继续游戏' }).click();
+
     await page.reload();
     await page.getByRole('button', { name: '继续游戏' }).click();
     await expect(page.getByRole('heading', { name: new RegExp(`${mode}测试玩家的北京日程`) })).toBeVisible();
@@ -86,6 +90,7 @@ for (const mode of ['classic', 'modern'] as const) {
     await expect(page.getByRole('dialog', { name: '本局结算' })).toBeVisible();
     await page.screenshot({ path: `test-results/${mode}-${testInfo.project.name}-settlement.png` });
     await page.getByRole('dialog', { name: '本局结算' }).getByRole('button', { name: '返回入口' }).click();
+    await expect(page.getByLabel('角色姓名')).toBeFocused();
     await page.getByRole('button', { name: '本地排行榜' }).click();
     await page.getByRole('tab', { name: mode === 'classic' ? '经典模式' : '新北京模式' }).click();
     await expect(page.getByText(`${mode}测试玩家`)).toBeVisible();
@@ -108,7 +113,7 @@ test('settings survive reload and an exported save can be restored after reset',
   expect(exportPath).not.toBeNull();
   await settings.getByRole('button', { name: '重置本局' }).click();
   await settings.getByRole('button', { name: '确认重置' }).click();
-  await expect(page.getByLabel('角色姓名')).toBeVisible();
+  await expect(page.getByLabel('角色姓名')).toBeFocused();
   await page.reload();
   await page.getByRole('button', { name: '设置' }).click();
   await expect(page.getByRole('dialog', { name: '设置' }).getByRole('checkbox', { name: '音效' })).not.toBeChecked();
@@ -141,4 +146,8 @@ test('an early loss settles without a fabricated score', async ({ page }, testIn
   await expect(page.getByRole('button', { name: '继续游戏' })).toBeFocused();
   await page.getByRole('button', { name: '本地排行榜' }).click();
   await expect(page.getByRole('tabpanel', { name: '经典模式' })).toContainText('暂无成绩');
+  await page.getByRole('dialog', { name: '本地排行榜' }).getByRole('button', { name: '关闭' }).click();
+  await page.getByRole('button', { name: '继续游戏' }).click();
+  await page.getByRole('dialog', { name: '本局结算' }).getByRole('button', { name: '重新开始' }).click();
+  await expect(page.getByLabel('角色姓名')).toBeFocused();
 });
