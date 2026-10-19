@@ -106,10 +106,10 @@ export function AppContent({ storage }: { storage?: Storage }) {
     {view === 'scores' && <ScoreboardDialog scores={scores ?? loadScores(storage)} onClose={() => setView(null)} />}
     {view === 'about' && <AboutDialog onClose={() => setView(null)} />}
     {view === 'help' && <HelpDialog onClose={() => setView(null)} />}
-    {view === 'settings' && <SettingsDialog settings={settings} onChange={updateSettings} onClose={() => setView(null)}
+    {view === 'settings' && <SettingsDialog settings={settings} notice={settingsError} onChange={updateSettings} onClose={() => setView(null)}
       onExport={exportSave} canExport={!!saved} canReset={!!saved} onImport={importSavedGame}
       onReset={() => { abandonGame(); setSettlementDismissed(false); }} />}
-    {settingsError && <div className="global-error" role="alert">{settingsError}<button type="button" onClick={() => setSettingsError(null)}>关闭</button></div>}
+    {settingsError && view !== 'settings' && <p className="settings-toast" role="status" aria-label="设置保存状态">{settingsError}</p>}
   </>;
 
   if (state) return <div className={`${settings.animationsEnabled ? '' : 'reduced-motion'} ${settings.compactDisplay ? 'compact-display' : ''}`}><GameShell
@@ -118,7 +118,7 @@ export function AppContent({ storage }: { storage?: Storage }) {
     onShowSettlement={() => setSettlementDismissed(false)} />
     {state.status !== 'playing' && state.pendingEvents.length === 0 && !view && !settlementDismissed &&
       <EndGameDialog state={state} scores={scores ?? loadScores(storage)} onClose={() => setSettlementDismissed(true)}
-        onReturn={() => { setSettlementDismissed(true); returnToStart(); }}
+        onReturn={() => { setSettlementDismissed(true); setFocusAfterConfirmation(true); returnToStart(); }}
         onRestart={() => { setSettlementDismissed(false); abandonGame(); }} />}
     {auxiliary}
     {!storageAvailable && <p className="storage-warning" role="status">浏览器存储不可用，本局进度只在当前页面有效。</p>}

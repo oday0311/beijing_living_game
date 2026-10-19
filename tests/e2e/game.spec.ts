@@ -79,7 +79,8 @@ for (const mode of ['classic', 'modern'] as const) {
     await expect(page.getByText(/第 2 \/ 40 天/)).toBeVisible();
     await assertLayout(page);
 
-    await page.evaluate(() => (window as Window & { __beijingTest?: { advanceToDay39: () => void } }).__beijingTest?.advanceToDay39());
+    await expect.poll(() => page.evaluate(() => Boolean((window as Window & { __beijingTest?: unknown }).__beijingTest))).toBe(true);
+    await page.evaluate(() => (window as Window & { __beijingTest: { advanceToDay39: () => void } }).__beijingTest.advanceToDay39());
     await expect(page.getByText(/第 39 \/ 40 天/)).toBeVisible();
     await travel(page);
     await expect(page.getByRole('dialog', { name: '本局结算' })).toBeVisible();
@@ -137,6 +138,7 @@ test('an early loss settles without a fabricated score', async ({ page }, testIn
   await expect(page.getByRole('button', { name: '查看结算' })).toBeVisible();
   await page.getByRole('button', { name: '查看结算' }).click();
   await page.getByRole('dialog', { name: '本局结算' }).getByRole('button', { name: '返回入口' }).click();
+  await expect(page.getByRole('button', { name: '继续游戏' })).toBeFocused();
   await page.getByRole('button', { name: '本地排行榜' }).click();
   await expect(page.getByRole('tabpanel', { name: '经典模式' })).toContainText('暂无成绩');
 });

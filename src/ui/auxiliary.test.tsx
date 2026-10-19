@@ -63,7 +63,9 @@ describe('auxiliary views', () => {
     expect(loadScores(storage).classic).toHaveLength(0);
     expect(within(settlement).getByRole('button', { name: '重新开始' })).toBeEnabled();
     await user.click(within(settlement).getByRole('button', { name: '返回入口' }));
-    expect(screen.getByRole('button', { name: '继续游戏' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续游戏' })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: '重新开始' })).toHaveFocus();
   });
 
   it('keeps failed settings changes in memory and reports that they were not saved', async () => {
@@ -81,7 +83,12 @@ describe('auxiliary views', () => {
     await user.click(within(dialog).getByRole('checkbox', { name: '紧凑显示' }));
     expect(within(dialog).getByRole('checkbox', { name: '音效' })).not.toBeChecked();
     expect(container.querySelector('.reduced-motion.compact-display')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('未保存');
+    expect(within(dialog).getByRole('status', { name: '设置保存状态' })).toHaveTextContent('未保存');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    within(dialog).getByRole('button', { name: '完成' }).focus();
+    await user.tab();
+    expect(within(dialog).getByRole('checkbox', { name: '音效' })).toHaveFocus();
     expect(loadSettings(storage)).toMatchObject({ soundEnabled: true, animationsEnabled: true, compactDisplay: false });
   });
 
@@ -93,6 +100,7 @@ describe('auxiliary views', () => {
     render(<App storage={unavailable} initialState={classicState()} />);
     await user.click(screen.getByRole('button', { name: '关闭音效' }));
     expect(screen.getByRole('button', { name: '开启音效' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('alert')).toHaveTextContent('未保存');
+    expect(screen.getByRole('status', { name: '设置保存状态' })).toHaveTextContent('未保存');
+    expect(screen.queryByRole('button', { name: '关闭' })).not.toBeInTheDocument();
   });
 });

@@ -2,8 +2,9 @@ import { useRef, useState } from 'react';
 import type { GameSettings } from '../persistence/schema';
 import { useModalFocus } from './useModalFocus';
 
-export function SettingsDialog({ settings, onChange, onExport, onImport, onReset, onClose, canExport, canReset }: {
+export function SettingsDialog({ settings, notice, onChange, onExport, onImport, onReset, onClose, canExport, canReset }: {
   settings: GameSettings;
+  notice: string | null;
   onChange: (settings: GameSettings) => void;
   onExport: () => void;
   onImport: (raw: string) => boolean;
@@ -39,6 +40,7 @@ export function SettingsDialog({ settings, onChange, onExport, onImport, onReset
       <label><span>紧凑显示</span><input type="checkbox" checked={settings.compactDisplay}
         onChange={(event) => onChange({ ...settings, compactDisplay: event.target.checked })} /></label>
     </div>
+    {notice && <p className="settings-notice" role="status" aria-label="设置保存状态">{notice}</p>}
     <div className="settings-data">
       <h3>本地存档</h3>
       <div className="settings-actions"><button type="button" className="button button-outline" disabled={!canExport} onClick={onExport}>导出存档</button>
