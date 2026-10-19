@@ -90,6 +90,9 @@ export function transfer(state: GameState, command: TransferCommand): CommandRes
   if (!isAccount(command.from) || !isAccount(command.to) || command.from === command.to) {
     return failure(state, 'ACCOUNT_UNSUPPORTED', 'Choose two distinct accounts.');
   }
+  if (state.mode === 'classic' && (command.from === 'wallet' || command.to === 'wallet')) {
+    return failure(state, 'ACCOUNT_UNSUPPORTED', 'Classic transfers only support cash and bank.');
+  }
   if (state[command.from] < command.amount) {
     return failure(state, 'INSUFFICIENT_FUNDS', 'The source account cannot cover this transfer.');
   }

@@ -20,4 +20,11 @@ describe('command reducer', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'GAME_ENDED' } });
     expect(result.state).toBe(state);
   });
+
+  it('rejects classic wallet transfers through command dispatch', () => {
+    const state = { ...createGame(classicContent, { playerName: 'Player', seed: 1, identityId: null }), wallet: 10 };
+    const result = reduceGameState(state, { type: 'TRANSFER', from: 'wallet', to: 'cash', amount: 1 }, classicContent);
+    expect(result).toMatchObject({ ok: false, error: { code: 'ACCOUNT_UNSUPPORTED' } });
+    expect(result.state).toBe(state);
+  });
 });

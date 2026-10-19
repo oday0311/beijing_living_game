@@ -108,4 +108,16 @@ describe('transfers', () => {
       expect(result.state).toBe(state);
     }
   });
+
+  it('rejects classic transfers into or out of the wallet without changing state', () => {
+    const state = stateWith({ cash: 100, bank: 50, wallet: 20 });
+    for (const command of [
+      { from: 'cash', to: 'wallet', amount: 10 },
+      { from: 'wallet', to: 'bank', amount: 10 },
+    ] as const) {
+      const result = transfer(state, command);
+      expect(result).toMatchObject({ ok: false, error: { code: 'ACCOUNT_UNSUPPORTED' } });
+      expect(result.state).toBe(state);
+    }
+  });
 });
