@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCancel }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmedRef = useRef(false);
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancelRef.current?.focus();
@@ -31,7 +32,10 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
       }
     };
     document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); previousFocus?.focus(); };
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (!confirmedRef.current && previousFocus?.isConnected) previousFocus.focus();
+    };
   }, [onCancel]);
 
   return <div className="dialog-backdrop">
@@ -40,7 +44,7 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
       <p>{children}</p>
       <div className="dialog-actions">
         <button ref={cancelRef} type="button" className="button button-quiet" onClick={onCancel}>取消</button>
-        <button type="button" className="button button-danger" onClick={onConfirm}>{confirmLabel}</button>
+        <button type="button" className="button button-danger" onClick={() => { confirmedRef.current = true; onConfirm(); }}>{confirmLabel}</button>
       </div>
     </div>
   </div>;

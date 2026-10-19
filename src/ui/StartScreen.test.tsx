@@ -26,10 +26,12 @@ describe('StartScreen', () => {
     const onRestart = vi.fn();
     render(<StartScreen onStart={vi.fn()} savedGame={stateWith({ playerName: '小北', day: 9 })} onRestart={onRestart} onContinue={vi.fn()} />);
     expect(screen.getByRole('button', { name: '继续游戏' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '重新开始' }));
+    const restart = screen.getByRole('button', { name: '重新开始' });
+    await user.click(restart);
     expect(onRestart).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(onRestart).not.toHaveBeenCalled();
+    expect(restart).toHaveFocus();
     await user.click(screen.getByRole('button', { name: '重新开始' }));
     await user.click(screen.getByRole('button', { name: '确认重新开始' }));
     expect(onRestart).toHaveBeenCalledOnce();

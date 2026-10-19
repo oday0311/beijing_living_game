@@ -1,12 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from './App';
+import { modernContent } from './content/modern';
+import { createGame } from './engine/create-game';
 import { CURRENT_SAVE_KEY, BACKUP_SAVE_KEY, saveGame } from './persistence/storage';
 import { classicState, memoryStorage } from './test/fixtures';
+import { renderAppWithState } from './test/render-game';
 
 describe('App', () => {
   beforeEach(() => window.localStorage.clear());
+  afterEach(cleanup);
 
   it('starts a classic session and restores it after mounting again', async () => {
     const user = userEvent.setup();
@@ -31,7 +35,7 @@ describe('App', () => {
     expect(window.localStorage.getItem(CURRENT_SAVE_KEY)).toBe('{broken');
     await user.click(screen.getByRole('button', { name: '确认新开' }));
     expect(window.localStorage.getItem(CURRENT_SAVE_KEY)).toBeNull();
-    expect(screen.getByLabelText('角色姓名')).toBeInTheDocument();
+    expect(screen.getByLabelText('角色姓名')).toHaveFocus();
   });
 
   it('restores the valid backup from a damaged current save', async () => {
@@ -43,5 +47,45 @@ describe('App', () => {
     render(<App />);
     await user.click(screen.getByRole('button', { name: '恢复上一份有效存档' }));
     expect(screen.getByRole('heading', { name: /旧档的北京日程/ })).toBeInTheDocument();
+  });
+
+  it('focuses the new-game form after confirmed restart', async () => {
+    const user = userEvent.setup();
+    saveGame(classicState({ playerName: '旧档' }), window.localStorage);
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: '重新开始' }));
+    await user.click(screen.getByRole('button', { name: '确认重新开始' }));
+    expect(screen.getByLabelText('角色姓名')).toHaveFocus();
+  });
+
+  it('links each tab to its panel and follows the keyboard tab pattern', async () => {
+    const state = createGame(modernContent, { playerName: '小北', identityId: 'courier', seed: 1 });
+    const { user } = renderAppWithState(state);
+    const tabs = [
+      screen.getByRole('tab', { name: '行情' }),
+      screen.getByRole('tab', { name: '存货' }),
+      screen.getByRole('tab', { name: '城市' }),
+    ];
+    for (const tab of tabs) {
+      const panel = document.getElementById(tab.getAttribute('aria-controls')!);
+      expect(tab.id).toBeTruthy();
+      expect(panel).toHaveAttribute('role', 'tabpanel');
+      expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+    }
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    await user.click(tabs[0]);
+    await user.keyboard('{ArrowRight}');
+    expect(tabs[1]).toHaveFocus();
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'game-panel-inventory');
+    await user.keyboard('{ArrowLeft}');
+    expect(tabs[0]).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(tabs[2]).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(tabs[0]).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(tabs[2]).toHaveFocus();
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
   });
 });

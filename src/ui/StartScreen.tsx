@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, Clock3, Info, RotateCcw, Trophy } from 'lucide-react';
 import { modernContent } from '../content/modern';
@@ -13,14 +13,23 @@ interface StartScreenProps {
   onRestart?: () => void;
   onShowScores?: () => void;
   onShowAbout?: () => void;
+  focusAfterConfirmation?: boolean;
 }
 
-export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout }: StartScreenProps) {
+export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout, focusAfterConfirmation = false }: StartScreenProps) {
   const [mode, setMode] = useState<Mode>('classic');
   const [playerName, setPlayerName] = useState('');
   const [identityId, setIdentityId] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!focusAfterConfirmation) return;
+    if (savedGame) continueRef.current?.focus();
+    else nameRef.current?.focus();
+  }, [focusAfterConfirmation, savedGame]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,7 +59,7 @@ export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowS
         <div className="section-label"><Clock3 size={17} aria-hidden="true" /> 本地进度</div>
         <h2 id="saved-title">{savedGame.playerName}，继续上次的路</h2>
         <p>第 {savedGame.day} / {savedGame.daysTotal} 天 · {savedGame.mode === 'classic' ? '经典模式' : '新北京模式'}</p>
-        <button type="button" className="button button-primary start-primary" onClick={onContinue}>
+        <button ref={continueRef} type="button" className="button button-primary start-primary" onClick={onContinue}>
           继续游戏 <ArrowRight size={18} aria-hidden="true" />
         </button>
         <button type="button" className="button button-link" onClick={() => setConfirmRestart(true)}>
@@ -69,7 +78,7 @@ export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowS
           </div>
           <div className="form-field">
             <label className="field-label" htmlFor="player-name">角色姓名</label>
-            <input id="player-name" autoComplete="off" maxLength={24} value={playerName}
+            <input ref={nameRef} id="player-name" autoComplete="off" maxLength={24} value={playerName}
               onChange={(event) => setPlayerName(event.target.value)} placeholder="写下你的名字" />
           </div>
           {mode === 'modern' && <fieldset className="identity-list" role="radiogroup" aria-label="选择身份">
