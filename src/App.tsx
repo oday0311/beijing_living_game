@@ -13,6 +13,7 @@ import './app.css';
 import './styles/tokens.css';
 import './styles/layout.css';
 import './styles/components.css';
+import './styles/art.css';
 
 interface AppProps {
   storage?: Storage;

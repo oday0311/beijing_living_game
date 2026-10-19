@@ -1,36 +1,25 @@
-import { useRef, useState } from 'react';
-import type { KeyboardEvent, RefObject } from 'react';
-import { ArrowLeft, ArrowRight, BanknoteArrowDown, Building2, HeartPulse, Info, Landmark, MapPin, Trophy, Wallet } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { ArrowLeft, BanknoteArrowDown, BookOpen, Building2, HeartPulse, Info, Landmark, MapPin, Trophy, Volume2, VolumeX, Wallet } from 'lucide-react';
 import { classicContent } from '../content/classic';
 import { modernContent } from '../content/modern';
-import { quoteTravel } from '../engine/day-cycle';
-import type { GameCommand, GameEvent } from '../engine/types';
+import type { GameCommand } from '../engine/types';
+import { playCue } from '../audio/sounds';
 import { useGame } from '../game/useGame';
-import { eventCopy } from './eventCopy';
+import { EventDialog } from './EventDialog';
+import { JournalDrawer } from './JournalDrawer';
+import { SubwayMap } from './SubwayMap';
 import { InventoryTable } from './InventoryTable';
 import { MarketTable } from './MarketTable';
 import { ServiceDialog } from './ServiceDialog';
 import type { ServiceKind } from './ServiceDialog';
 import { StatusStrip } from './StatusStrip';
 import { TradeDialog } from './TradeDialog';
-import { useModalFocus } from './useModalFocus';
 
 const tabs = [
   { id: 'market', label: '行情' }, { id: 'inventory', label: '存货' }, { id: 'city', label: '城市' },
 ] as const;
 type Tab = typeof tabs[number]['id'];
-
-function EventDialog({ event, onAcknowledge, fallbackFocus }: {
-  event: GameEvent; onAcknowledge: () => void; fallbackFocus: RefObject<HTMLElement | null>;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useModalFocus(ref, () => {}, fallbackFocus);
-  const { title, body } = eventCopy(event);
-  return <div className="dialog-backdrop"><div ref={ref} className="desk-dialog" role="dialog" aria-modal="true" aria-labelledby="event-dialog-title">
-    <p className="eyebrow">城市快讯</p><h2 id="event-dialog-title">{title}</h2><p>{body}</p>
-    <div className="dialog-actions"><button type="button" className="button button-primary" onClick={onAcknowledge}>知道了 <ArrowRight size={17} aria-hidden="true" /></button></div>
-  </div></div>;
-}
 
 export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => void; onShowAbout: () => void }) {
   const { state, dispatch, returnToStart } = useGame();
@@ -38,8 +27,17 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [trade, setTrade] = useState<'buy' | 'sell' | null>(null);
   const [service, setService] = useState<ServiceKind | null>(null);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const tabButtons = useRef<Record<Tab, HTMLButtonElement | null>>({ market: null, inventory: null, city: null });
+  const journalButton = useRef<HTMLButtonElement>(null);
+  const lastEventId = useRef<string | null>(null);
+  const pendingEventId = state?.pendingEvents[0]?.id ?? null;
+  useEffect(() => {
+    if (pendingEventId && pendingEventId !== lastEventId.current) playCue('event', soundEnabled);
+    lastEventId.current = pendingEventId;
+  }, [pendingEventId, soundEnabled]);
   if (!state) return null;
   const pack = state.mode === 'classic' ? classicContent : modernContent;
   const location = pack.locations.find(({ id }) => id === state.locationId);
@@ -61,6 +59,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
   }
   function submit(command: GameCommand) {
     dispatch(command);
+    if (command.type === 'BUY' || command.type === 'SELL') playCue(command.type === 'BUY' ? 'buy' : 'sell', soundEnabled);
     setTrade(null);
     setService(null);
   }
@@ -69,6 +68,8 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
       <nav aria-label="页面导航" className="game-nav">
         <button type="button" title="排行榜" aria-label="排行榜" onClick={onShowScores}><Trophy size={19} /></button>
         <button type="button" title="关于" aria-label="关于" onClick={onShowAbout}><Info size={19} /></button>
+        <button ref={journalButton} type="button" title="旅程日记" aria-label="旅程日记" onClick={() => setJournalOpen(true)}><BookOpen size={19} /></button>
+        <button type="button" title={soundEnabled ? '关闭音效' : '开启音效'} aria-label={soundEnabled ? '关闭音效' : '开启音效'} aria-pressed={soundEnabled} onClick={() => setSoundEnabled((value) => !value)}>{soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}</button>
         <button type="button" className="back-link" onClick={returnToStart}><ArrowLeft size={17} /> 返回入口</button>
       </nav></header>
     <div className="game-content desk-content">
@@ -93,19 +94,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         </section>
         <section id="game-panel-city" aria-labelledby="game-tab-city" className="game-panel desk-city" role="tabpanel" tabIndex={0} hidden={tab !== 'city'}>
           <div className="desk-section-head"><h2>选择下一站</h2><span>旅行将进入下一天</span></div>
-          <div className="station-list">{pack.locations.map((station) => {
-            let quote: ReturnType<typeof quoteTravel> | null = null;
-            try { quote = quoteTravel(state, station.id, pack); } catch { /* Disconnected locations stay unavailable. */ }
-            const route = quote?.path.map((id) => pack.locations.find((place) => place.id === id)?.name ?? id).join(' → ');
-            const lines = quote?.lineIds.map((id) => id === 'classic' ? '经典线路' : `${id.replace('line-', '')}号线`).join(' → ');
-            return <button key={station.id} type="button" disabled={!active || station.id === state.locationId || !quote}
-              aria-labelledby={`station-name-${station.id}`} aria-describedby={station.id === state.locationId ? undefined : `station-detail-${station.id}`}
-              onClick={() => dispatch({ type: 'TRAVEL', targetId: station.id })}>
-              <strong id={`station-name-${station.id}`}>{station.name}</strong>{station.id === state.locationId ? <small>当前位置</small> : <>
-                <small id={`station-detail-${station.id}`}>路线：{route}；{lines || '线路未标注'} · {quote?.transfers ?? 0} 次换乘 · 车费 ¥{quote?.fare ?? 0}{quote?.freeTransitUsed ? '（免票）' : ''}</small>
-              </>}
-            </button>;
-          })}</div>
+          <SubwayMap state={state} pack={pack} disabled={!active} onTravel={(targetId) => { dispatch({ type: 'TRAVEL', targetId }); playCue('travel', soundEnabled); }} />
         </section>
       </div>
     </div>
@@ -119,6 +108,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         {state.mode === 'classic' && location?.services.includes('housing') && <button type="button" onClick={() => setService('housing')} disabled={!active} title="住房"><Building2 size={18} aria-hidden="true" /><span>住房</span></button>}</div></div></div>
     {trade && selected && <TradeDialog key={`${trade}-${selected}`} state={state} pack={pack} itemId={selected} kind={trade} onClose={() => setTrade(null)} onSubmit={submit} />}
     {service && <ServiceDialog key={service} state={state} kind={service} onClose={() => setService(null)} onSubmit={submit} />}
-    {pending && <EventDialog event={pending} onAcknowledge={() => dispatch({ type: 'ACK_EVENT' })} fallbackFocus={headingRef} />}
+    {pending && <EventDialog event={pending} mode={state.mode} onAcknowledge={() => dispatch({ type: 'ACK_EVENT' })} fallbackFocus={headingRef} />}
+    {journalOpen && <JournalDrawer entries={state.journal} pack={pack} onClose={() => setJournalOpen(false)} fallbackFocus={journalButton} />}
   </main>;
 }

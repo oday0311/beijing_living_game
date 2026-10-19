@@ -37,6 +37,7 @@ describe('GameShell', () => {
     const { user } = renderAppWithState(modernState({ locationId: 'xizhimen', cash: 1000, pendingEvents: [] }));
     await user.click(screen.getByRole('tab', { name: '城市' }));
     await user.click(screen.getByRole('button', { name: /海淀黄庄/ }));
+    await user.click(screen.getByRole('button', { name: '确认换站' }));
     expect(screen.getByText(/第 2 \/ 40 天/)).toBeInTheDocument();
   });
 
@@ -81,6 +82,7 @@ describe('GameShell', () => {
     const { user } = renderAppWithState(modernState({ locationId: 'xizhimen', cash: 1000, pendingEvents: [] }));
     await user.click(screen.getByRole('tab', { name: '城市' }));
     await user.click(screen.getByRole('button', { name: /海淀黄庄/ }));
+    await user.click(screen.getByRole('button', { name: '确认换站' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '知道了' }));
     expect(screen.getByRole('heading', { name: 'Player的北京日程' })).toHaveFocus();

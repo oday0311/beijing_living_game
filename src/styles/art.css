@@ -1,0 +1,55 @@
+:root {
+  --art-ink: #17201f;
+  --art-panel: #22302d;
+  --art-paper: #eee3c7;
+  --art-ticket: #d5aa45;
+  --art-action: #bd4334;
+  --art-success: #4f8067;
+  --art-border: #6f7f79;
+  --art-white: #fffaf0;
+}
+
+.desk-city { min-width: 0; }
+.subway-map { position: relative; width: 100%; min-height: 520px; margin-top: 18px; border: 1px solid var(--art-border); background: var(--art-paper); overflow: hidden; }
+.subway-connector { position: absolute; z-index: 1; height: 5px; transform-origin: left center; }
+.subway-station { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; width: 138px; min-height: 44px; padding: 4px 7px; border: 1px solid var(--art-border); border-radius: 2px; background: var(--art-white); color: var(--art-ink); text-align: left; transform: translate(-40%, -50%); box-shadow: 2px 2px 0 #17201f30; }
+.subway-station:hover:not(:disabled), .subway-station:focus-visible { border-color: var(--art-action); box-shadow: 0 0 0 2px var(--art-action); }
+.subway-station[aria-current='location'] { border-color: var(--art-action); background: var(--art-ticket); opacity: 1; }
+.station-symbol { width: 15px; height: 15px; flex: none; border: 4px solid; border-radius: 50%; background: var(--art-white); }
+.station-copy { display: block; min-width: 0; }
+.station-copy strong { display: block; font-size: .86rem; white-space: nowrap; }
+.station-copy em { color: var(--art-action); font-size: .68rem; font-style: normal; font-weight: 700; }
+.station-copy small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.subway-map-classic { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; min-height: 0; padding: 24px; }
+.subway-map-classic .subway-station { position: static; width: 100%; min-height: 60px; transform: none; }
+.event-dialog { width: min(100%, 540px); padding: 0 0 24px; background: var(--art-white); }
+.event-dialog .eyebrow, .event-dialog h2, .event-dialog > p:not(.eyebrow), .event-dialog .dialog-actions { margin-left: 24px; margin-right: 24px; }
+.event-art { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; margin-bottom: 20px; }
+.event-dialog .eyebrow { color: var(--art-action); }
+.event-dialog h2 { color: var(--art-ink); }
+.journal-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(100%, 560px); display: flex; flex-direction: column; background: var(--art-white); color: var(--art-ink); box-shadow: -12px 0 36px #17201f40; }
+.journal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--art-border); }
+.journal-header h2 { margin: 0; font-size: 1.2rem; }
+.journal-header button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; background: transparent; color: inherit; }
+.journal-filters { display: flex; gap: 3px; flex-wrap: wrap; padding: 13px 20px; border-bottom: 1px solid var(--art-border); }
+.journal-filters button { min-height: 36px; padding: 5px 10px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--art-ink); }
+.journal-filters button[aria-pressed='true'] { border-color: var(--art-panel); background: var(--art-panel); color: var(--art-white); }
+.journal-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 5px 24px 32px; }
+.journal-day h3 { margin: 23px 0 9px; border-bottom: 2px solid var(--art-success); padding-bottom: 7px; font-size: .92rem; }
+.journal-day ol { margin: 0; padding: 0; list-style: none; }
+.journal-day li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; border-bottom: 1px solid #6f7f7940; padding: 12px 0; }
+.journal-day li p { margin: 4px 0 0; color: #4b5c55; overflow-wrap: anywhere; }
+.journal-type { color: var(--art-action); font-size: .75rem; font-weight: 700; }
+@media (max-width: 899px) {
+  .subway-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-height: 0; padding: 14px; }
+  .subway-connector { display: none; }
+  .subway-station, .subway-map-classic .subway-station { position: static; width: 100%; min-height: 60px; transform: none; }
+}
+@media (max-width: 540px) {
+  .subway-map { grid-template-columns: 1fr; }
+  .event-dialog { max-height: calc(100dvh - 20px); }
+  .event-art { max-height: 34dvh; }
+  .journal-header { padding: 14px 18px; }
+  .journal-filters { padding: 10px 14px; }
+  .journal-scroll { padding-inline: 18px; }
+}
