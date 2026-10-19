@@ -56,6 +56,7 @@ describe('local game saves', () => {
       stateWith({ day: 40, status: 'won', health: -1, finalScore: 170 }),
       stateWith({ day: 40, status: 'won', health: 1, finalScore: 0 }),
       stateWith({ day: 40, status: 'lost', health: 1, finalScore: 170 }),
+      stateWith({ day: 12, status: 'playing', health: -1, finalScore: null }),
     ];
     for (const state of invalid) expect(importGame(JSON.stringify(state), storage).kind).toBe('corrupt');
     const valid = [
@@ -293,6 +294,66 @@ describe('local game saves', () => {
     clearCurrentGame(storage);
     expect(loadGame(storage)).toEqual({ kind: 'empty' });
     expect(restoreBackup(storage)).toMatchObject({ day: 5 });
+  });
+
+  it('does not resurrect a transaction when marker removal fails after current is cleared', () => {
+    for (const phase of ['pending', 'committed'] as const) {
+      const storage = memoryStorage();
+      const previousCurrent = exportGame(stateWith({ day: 3 }));
+      const nextCurrent = exportGame(stateWith({ day: 4 }));
+      storage.setItem(CURRENT_SAVE_KEY, nextCurrent);
+      storage.setItem(BACKUP_SAVE_KEY, previousCurrent);
+      storage.setItem('beijing-fushengji.save.transaction.v1',
+        JSON.stringify({ phase, previousCurrent, previousBackup: previousCurrent, nextCurrent }));
+      const removeItem = storage.removeItem.bind(storage);
+      storage.removeItem = (key) => {
+        if (key === 'beijing-fushengji.save.transaction.v1') {
+          throw new DOMException('blocked', 'SecurityError');
+        }
+        removeItem(key);
+      };
+      expect(() => clearCurrentGame(storage)).toThrow();
+      expect(storage.getItem(CURRENT_SAVE_KEY)).toBeNull();
+      expect(loadGame(storage)).toEqual({ kind: 'empty' });
+      storage.removeItem = removeItem;
+      clearCurrentGame(storage);
+      expect(loadGame(storage)).toEqual({ kind: 'empty' });
+      expect(storage.getItem('beijing-fushengji.save.transaction.v1')).toBeNull();
+    }
+  });
+
+  it('keeps a partially cleared game hidden until clear is retried or a new game is saved', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 3 }), storage);
+    const removeItem = storage.removeItem.bind(storage);
+    storage.removeItem = (key) => {
+      if (key === CURRENT_SAVE_KEY) throw new DOMException('blocked', 'SecurityError');
+      removeItem(key);
+    };
+    expect(() => clearCurrentGame(storage)).toThrow();
+    expect(loadGame(storage)).toEqual({ kind: 'empty' });
+    storage.removeItem = removeItem;
+    saveGame(stateWith({ day: 1 }), storage);
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 1 } });
+    clearCurrentGame(storage);
+    expect(loadGame(storage)).toEqual({ kind: 'empty' });
+  });
+
+  it('stays empty when final tombstone cleanup fails', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 3 }), storage);
+    const removeItem = storage.removeItem.bind(storage);
+    storage.removeItem = (key) => {
+      if (key === 'beijing-fushengji.save.clearing.v1') throw new DOMException('blocked', 'SecurityError');
+      removeItem(key);
+    };
+    expect(() => clearCurrentGame(storage)).toThrow();
+    expect(storage.getItem(CURRENT_SAVE_KEY)).toBeNull();
+    expect(loadGame(storage)).toEqual({ kind: 'empty' });
+    storage.removeItem = removeItem;
+    clearCurrentGame(storage);
+    expect(storage.getItem('beijing-fushengji.save.clearing.v1')).toBeNull();
+    expect(loadGame(storage)).toEqual({ kind: 'empty' });
   });
 
   it('returns a safe state when storage reads are blocked', () => {

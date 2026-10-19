@@ -5,6 +5,7 @@ import type { GameSettings, ScoreEntry } from './schema';
 export const CURRENT_SAVE_KEY = 'beijing-fushengji.save.v1';
 export const BACKUP_SAVE_KEY = 'beijing-fushengji.save.backup.v1';
 const SAVE_TRANSACTION_KEY = 'beijing-fushengji.save.transaction.v1';
+const CLEAR_TOMBSTONE_KEY = 'beijing-fushengji.save.clearing.v1';
 export const SETTINGS_KEY = 'beijing-fushengji.settings.v1';
 export const SCORES_KEY = 'beijing-fushengji.scores.v1';
 
@@ -81,6 +82,7 @@ function recoverPendingSave(storage: Storage, replaceInvalid: boolean): void {
 export function loadGame(storage?: Storage): LoadGameResult {
   try {
     const target = storage ?? localStorage;
+    if (target.getItem(CLEAR_TOMBSTONE_KEY) !== null) return { kind: 'empty' };
     const raw = target.getItem(CURRENT_SAVE_KEY);
     const parsedCurrent = raw === null ? null : parseSave(raw);
     if (parsedCurrent !== null && parsedCurrent.kind !== 'ok') return parsedCurrent;
@@ -98,6 +100,12 @@ export function saveGame(state: GameState, storage: Storage = localStorage): voi
 }
 
 function writeGame(state: GameState, storage: Storage, replaceInvalid: boolean): void {
+  if (storage.getItem(CLEAR_TOMBSTONE_KEY) !== null) {
+    storage.removeItem(SAVE_TRANSACTION_KEY);
+    storage.setItem(CURRENT_SAVE_KEY, JSON.stringify(state));
+    storage.removeItem(CLEAR_TOMBSTONE_KEY);
+    return;
+  }
   recoverPendingSave(storage, replaceInvalid);
   const current = storage.getItem(CURRENT_SAVE_KEY);
   const validCurrent = current !== null && parseSave(current).kind === 'ok';
@@ -136,6 +144,16 @@ function writeGame(state: GameState, storage: Storage, replaceInvalid: boolean):
 export function restoreBackup(storage?: Storage): GameState | null {
   try {
     const target = storage ?? localStorage;
+    if (target.getItem(CLEAR_TOMBSTONE_KEY) !== null) {
+      const raw = target.getItem(BACKUP_SAVE_KEY);
+      if (raw === null) return null;
+      const result = parseSave(raw);
+      if (result.kind !== 'ok') return null;
+      target.removeItem(SAVE_TRANSACTION_KEY);
+      target.setItem(CURRENT_SAVE_KEY, raw);
+      target.removeItem(CLEAR_TOMBSTONE_KEY);
+      return result.state;
+    }
     recoverPendingSave(target, true);
     const raw = target.getItem(BACKUP_SAVE_KEY);
     if (raw === null) return null;
@@ -165,8 +183,10 @@ export function importGame(raw: string, storage: Storage = localStorage): Exclud
 }
 
 export function clearCurrentGame(storage: Storage = localStorage): void {
+  storage.setItem(CLEAR_TOMBSTONE_KEY, '1');
   storage.removeItem(CURRENT_SAVE_KEY);
   storage.removeItem(SAVE_TRANSACTION_KEY);
+  storage.removeItem(CLEAR_TOMBSTONE_KEY);
 }
 
 export function saveSettings(settings: GameSettings, storage: Storage = localStorage): void {
