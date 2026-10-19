@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, RefObject } from 'react';
 import { ArrowLeft, ArrowRight, BanknoteArrowDown, Building2, HeartPulse, Info, Landmark, MapPin, Trophy, Wallet } from 'lucide-react';
 import { classicContent } from '../content/classic';
 import { modernContent } from '../content/modern';
-import type { GameCommand } from '../engine/types';
+import { quoteTravel } from '../engine/day-cycle';
+import type { GameCommand, GameEvent } from '../engine/types';
 import { useGame } from '../game/useGame';
+import { eventCopy } from './eventCopy';
 import { InventoryTable } from './InventoryTable';
 import { MarketTable } from './MarketTable';
 import { ServiceDialog } from './ServiceDialog';
@@ -18,9 +20,12 @@ const tabs = [
 ] as const;
 type Tab = typeof tabs[number]['id'];
 
-function EventDialog({ title, body, onAcknowledge }: { title: string; body: string; onAcknowledge: () => void }) {
+function EventDialog({ event, onAcknowledge, fallbackFocus }: {
+  event: GameEvent; onAcknowledge: () => void; fallbackFocus: RefObject<HTMLElement | null>;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  useModalFocus(ref, () => {});
+  useModalFocus(ref, () => {}, fallbackFocus);
+  const { title, body } = eventCopy(event);
   return <div className="dialog-backdrop"><div ref={ref} className="desk-dialog" role="dialog" aria-modal="true" aria-labelledby="event-dialog-title">
     <p className="eyebrow">城市快讯</p><h2 id="event-dialog-title">{title}</h2><p>{body}</p>
     <div className="dialog-actions"><button type="button" className="button button-primary" onClick={onAcknowledge}>知道了 <ArrowRight size={17} aria-hidden="true" /></button></div>
@@ -33,6 +38,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [trade, setTrade] = useState<'buy' | 'sell' | null>(null);
   const [service, setService] = useState<ServiceKind | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const tabButtons = useRef<Record<Tab, HTMLButtonElement | null>>({ market: null, inventory: null, city: null });
   if (!state) return null;
   const pack = state.mode === 'classic' ? classicContent : modernContent;
@@ -67,7 +73,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
       </nav></header>
     <div className="game-content desk-content">
       <div className="game-title-row"><div><p className="eyebrow">{state.mode === 'classic' ? '经典模式' : '新北京模式'} · 第 {state.day} / {state.daysTotal} 天</p>
-        <h1>{state.playerName}的北京日程</h1></div><span className="location-chip"><MapPin size={17} aria-hidden="true" /> {location?.name ?? '尚未出发'}</span></div>
+        <h1 ref={headingRef} tabIndex={-1}>{state.playerName}的北京日程</h1></div><span className="location-chip"><MapPin size={17} aria-hidden="true" /> {location?.name ?? '尚未出发'}</span></div>
       <StatusStrip state={state} pack={pack} />
       {state.status !== 'playing' && <section className="end-notice"><div><h2>{state.status === 'won' ? '这一程，收获颇丰' : '这一程，暂告一段落'}</h2>
         <p>{state.finalScore === null ? '旅程已经结束。' : `最终得分：${state.finalScore.toLocaleString()}`}</p></div></section>}
@@ -87,10 +93,19 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         </section>
         <section id="game-panel-city" aria-labelledby="game-tab-city" className="game-panel desk-city" role="tabpanel" tabIndex={0} hidden={tab !== 'city'}>
           <div className="desk-section-head"><h2>选择下一站</h2><span>旅行将进入下一天</span></div>
-          <div className="station-list">{pack.locations.map((station) => <button key={station.id} type="button"
-            disabled={!active || station.id === state.locationId} onClick={() => dispatch({ type: 'TRAVEL', targetId: station.id })}>
-            <span>{station.name}</span>{station.id === state.locationId ? <small>当前位置</small> : <ArrowRight size={16} aria-hidden="true" />}
-          </button>)}</div>
+          <div className="station-list">{pack.locations.map((station) => {
+            let quote: ReturnType<typeof quoteTravel> | null = null;
+            try { quote = quoteTravel(state, station.id, pack); } catch { /* Disconnected locations stay unavailable. */ }
+            const route = quote?.path.map((id) => pack.locations.find((place) => place.id === id)?.name ?? id).join(' → ');
+            const lines = quote?.lineIds.map((id) => id === 'classic' ? '经典线路' : `${id.replace('line-', '')}号线`).join(' → ');
+            return <button key={station.id} type="button" disabled={!active || station.id === state.locationId || !quote}
+              aria-labelledby={`station-name-${station.id}`} aria-describedby={station.id === state.locationId ? undefined : `station-detail-${station.id}`}
+              onClick={() => dispatch({ type: 'TRAVEL', targetId: station.id })}>
+              <strong id={`station-name-${station.id}`}>{station.name}</strong>{station.id === state.locationId ? <small>当前位置</small> : <>
+                <small id={`station-detail-${station.id}`}>路线：{route}；{lines || '线路未标注'} · {quote?.transfers ?? 0} 次换乘 · 车费 ¥{quote?.fare ?? 0}{quote?.freeTransitUsed ? '（免票）' : ''}</small>
+              </>}
+            </button>;
+          })}</div>
         </section>
       </div>
     </div>
@@ -104,6 +119,6 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         {state.mode === 'classic' && location?.services.includes('housing') && <button type="button" onClick={() => setService('housing')} disabled={!active} title="住房"><Building2 size={18} aria-hidden="true" /><span>住房</span></button>}</div></div></div>
     {trade && selected && <TradeDialog key={`${trade}-${selected}`} state={state} pack={pack} itemId={selected} kind={trade} onClose={() => setTrade(null)} onSubmit={submit} />}
     {service && <ServiceDialog key={service} state={state} kind={service} onClose={() => setService(null)} onSubmit={submit} />}
-    {pending && <EventDialog title={pending.title} body={pending.body} onAcknowledge={() => dispatch({ type: 'ACK_EVENT' })} />}
+    {pending && <EventDialog event={pending} onAcknowledge={() => dispatch({ type: 'ACK_EVENT' })} fallbackFocus={headingRef} />}
   </main>;
 }

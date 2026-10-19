@@ -16,6 +16,11 @@ function cashOnly(state: GameState, account: string): CommandResult | null {
   return account === 'cash' ? null : failure(state, 'ACCOUNT_UNSUPPORTED', 'This service accepts cash only.');
 }
 
+export function housingUpgradeCost(cash: number): number {
+  const remainingCash = cash === 30_000 ? 5_000 : Math.trunc(cash / 2) - 2_000;
+  return cash - remainingCash;
+}
+
 export function repayDebt(state: GameState, command: RepayCommand, pack: ContentPack): CommandResult {
   if (!validAmount(command.amount)) {
     return failure(state, 'INVALID_QUANTITY', 'Repayment must be a positive integer.');
@@ -85,7 +90,7 @@ export function upgradeHousing(state: GameState, command: HousingCommand, pack: 
   if (state.cash < 30_000) {
     return failure(state, 'INSUFFICIENT_FUNDS', 'Housing requires at least 30,000 cash.');
   }
-  const remainingCash = state.cash === 30_000 ? state.cash - 25_000 : Math.trunc(state.cash / 2) - 2_000;
+  const remainingCash = state.cash - housingUpgradeCost(state.cash);
   return success(state, { cash: remainingCash, capacity: state.capacity + 10 }, {
     title: 'Housing upgrade', detail: `${state.capacity + 10} capacity`,
     delta: { cash: remainingCash - state.cash },

@@ -49,4 +49,16 @@ describe('ServiceDialog', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('借款上限');
     expect(screen.getByText('¥100')).toBeInTheDocument();
   });
+
+  it('shows the exact housing cost and confirms a large cash charge despite bank savings', async () => {
+    const { user } = renderAppWithState(classicState({ locationId: 'xizhimen', cash: 30_000, bank: 100_000, capacity: 100 }));
+    await user.click(screen.getByRole('button', { name: '住房' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('¥25,000');
+    await user.click(screen.getByRole('button', { name: '确认扩容' }));
+    expect(screen.getByRole('dialog', { name: '确认大额支出' })).toBeInTheDocument();
+    expect(screen.getByText('¥30,000')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '继续支出' }));
+    expect(screen.getByText('¥5,000')).toBeInTheDocument();
+    expect(screen.getByText('0 / 110')).toBeInTheDocument();
+  });
 });

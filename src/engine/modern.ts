@@ -69,22 +69,49 @@ export function ageTrends(trends: Trend[]): Trend[] {
     .filter((trend) => trend.daysLeft > 0);
 }
 
-export function travelCost(pack: ContentPack, origin: string, destination: string, identityId: string | null): number {
+export function travelRoute(pack: ContentPack, origin: string, destination: string): string[] {
   const locations = new Map(pack.locations.map((location) => [location.id, location]));
   if (!locations.has(origin) || !locations.has(destination)) throw new RangeError('Unknown station');
   const seen = new Set([origin]);
-  const queue: Array<[string, number]> = [[origin, 0]];
-  for (const [id, edges] of queue) {
-    if (id === destination) {
-      const fare = Math.min(8, 3 + Math.floor(edges / 4));
-      const benefit = pack.identities.find((identity) => identity.id === identityId)?.effect;
-      return benefit?.kind === 'transit' ? Math.max(1, Math.floor(fare * benefit.value)) : fare;
-    }
+  const queue: string[][] = [[origin]];
+  for (const path of queue) {
+    const id = path[path.length - 1];
+    if (id === destination) return path;
     for (const neighbor of locations.get(id)?.neighborIds ?? []) {
-      if (locations.has(neighbor) && !seen.has(neighbor)) { seen.add(neighbor); queue.push([neighbor, edges + 1]); }
+      if (locations.has(neighbor) && !seen.has(neighbor)) { seen.add(neighbor); queue.push([...path, neighbor]); }
     }
   }
   throw new RangeError('Stations are disconnected');
+}
+
+export function routeLines(pack: ContentPack, path: string[]): string[] {
+  if (path.length < 2) return [];
+  const locations = new Map(pack.locations.map((location) => [location.id, location]));
+  let choices = new Map<string, { changes: number; lines: string[] }>();
+  for (let index = 1; index < path.length; index += 1) {
+    const left = locations.get(path[index - 1]);
+    const right = locations.get(path[index]);
+    const common = left?.lineIds.filter((line) => right?.lineIds.includes(line)) ?? [];
+    if (common.length === 0) return [];
+    const next = new Map<string, { changes: number; lines: string[] }>();
+    for (const line of common) {
+      const candidates = choices.size ? [...choices].map(([previous, value]) => ({
+        changes: value.changes + Number(previous !== line), lines: [...value.lines, line],
+      })) : [{ changes: 0, lines: [line] }];
+      candidates.sort((a, b) => a.changes - b.changes || a.lines.join().localeCompare(b.lines.join()));
+      next.set(line, candidates[0]);
+    }
+    choices = next;
+  }
+  const best = [...choices.values()].sort((a, b) => a.changes - b.changes || a.lines.join().localeCompare(b.lines.join()))[0];
+  return best.lines.filter((line, index) => index === 0 || line !== best.lines[index - 1]);
+}
+
+export function travelCost(pack: ContentPack, origin: string, destination: string, identityId: string | null): number {
+  const edges = travelRoute(pack, origin, destination).length - 1;
+  const fare = Math.min(8, 3 + Math.floor(edges / 4));
+  const benefit = pack.identities.find((identity) => identity.id === identityId)?.effect;
+  return benefit?.kind === 'transit' ? Math.max(1, Math.floor(fare * benefit.value)) : fare;
 }
 
 function visible(event: EventDefinition) {

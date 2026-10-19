@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { modernContent } from '../content/modern';
 import { createGame } from './create-game';
 import { modernState, ScriptedRng, stubPack, trend } from '../test/fixtures';
-import { settleDay, travel } from './day-cycle';
+import { quoteTravel, settleDay, travel } from './day-cycle';
 import { generateMarket } from './market';
 import { applyEvent, applyIdentity, applyTrends, applyWeather, borrowModern, creditTerms, moveCredit, settleWallet, travelCost, triggeredModern } from './modern';
 import { SeededRng } from './rng';
@@ -46,6 +46,19 @@ describe('modern mechanics', () => {
       day: 4, cash: 100, pendingEvents: [] }, 'guomao', modernContent, new SeededRng(3));
     expect(result.ok && result.state.day).toBe(5);
     expect(result.ok && result.state.cash).toBeLessThan(100);
+  });
+
+  it('quotes the same route, lines and final fare used by travel', () => {
+    const state = modernState({ locationId: 'xizhimen', identityId: 'courier', weatherId: 'rain',
+      cash: 100, pendingEvents: [], modern: { ...modernState().modern!, freeTransitUses: 0 } });
+    expect(quoteTravel(state, 'haidianhuangzhuang', modernContent)).toEqual({
+      path: ['xizhimen', 'haidianhuangzhuang'], lineIds: ['line-4'], transfers: 0, fare: 2, freeTransitUsed: false,
+    });
+    const free = { ...state, modern: { ...state.modern!, freeTransitUses: 1 } };
+    expect(quoteTravel(free, 'haidianhuangzhuang', modernContent).fare).toBe(0);
+    const moved = travel(free, 'haidianhuangzhuang', modernContent, new SeededRng(free.rngState));
+    expect(moved.ok && moved.state.modern?.freeTransitUses).toBe(0);
+    expect(quoteTravel(state, 'guomao', modernContent).transfers).toBe(1);
   });
 
   it('enforces credit limits and repays into the next tier', () => {

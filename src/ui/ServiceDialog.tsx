@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Account, GameCommand, GameState } from '../engine/types';
+import { housingUpgradeCost } from '../engine/services';
 import { useModalFocus } from './useModalFocus';
 
 export type ServiceKind = 'bank' | 'repay' | 'borrow' | 'heal' | 'housing';
@@ -26,9 +27,8 @@ export function ServiceDialog({ state, kind, onClose, onSubmit }: {
   const value = Number(amount);
   const valid = kind === 'housing' || positiveInteger(amount);
   const liquid = state.cash + state.bank + (state.mode === 'modern' ? state.wallet : 0);
-  const housingRemainder = state.cash === 30_000 ? 5_000 : Math.trunc(state.cash / 2) - 2_000;
   const spend = kind === 'repay' ? value : kind === 'heal' ? Math.min(value, 100 - state.health) * 3500
-    : kind === 'housing' ? state.cash - housingRemainder : 0;
+    : kind === 'housing' ? housingUpgradeCost(state.cash) : 0;
   function command(): GameCommand {
     switch (kind) {
       case 'bank': return { type: 'TRANSFER', from, to, amount: value };
@@ -40,7 +40,11 @@ export function ServiceDialog({ state, kind, onClose, onSubmit }: {
   }
   function submit() {
     if (!valid) return;
-    if (spend > liquid / 2 && !confirmSpend) { setConfirmSpend(true); return; }
+    const threshold = kind === 'housing' ? state.cash / 2 : liquid / 2;
+    if (spend > threshold && (kind !== 'housing' || state.cash >= 30_000) && !confirmSpend) {
+      setConfirmSpend(true);
+      return;
+    }
     onSubmit(command());
   }
   return <div className="dialog-backdrop"><div ref={dialogRef} className="desk-dialog" role="dialog" aria-modal="true" aria-label={confirmSpend ? '确认大额支出' : labels[kind]}>
@@ -59,7 +63,9 @@ export function ServiceDialog({ state, kind, onClose, onSubmit }: {
         </select></label>}</>}
       {kind === 'borrow' && <p className="dialog-note">借款将计入债务，额度由当前信用决定。</p>}
       {kind === 'heal' && <p className="dialog-note">当前健康 {state.health} / 100，每点 ¥3,500，现金支付。</p>}
-      {kind === 'housing' && <p className="dialog-note">当前容量 {state.capacity}，扩容 10 格；费用按当前现金计算。</p>}
+      {kind === 'housing' && <><p className="dialog-note">当前容量 {state.capacity}，扩容 10 格。</p>
+        {state.cash >= 30_000 ? <p className="dialog-total">预计费用 <strong>¥{housingUpgradeCost(state.cash).toLocaleString()}</strong></p>
+          : <p className="dialog-note">扩容需要至少 ¥30,000 现金。</p>}</>}
       {kind !== 'housing' && <label className="dialog-field">{kind === 'heal' ? '点数' : '金额'}<input type="number" inputMode="numeric" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>}
       <div className="dialog-actions"><button className="button button-quiet" type="button" onClick={onClose}>取消</button>
         <button className="button button-primary" type="button" disabled={!valid} onClick={submit}>{commands[kind]}</button></div>

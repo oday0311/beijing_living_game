@@ -39,4 +39,50 @@ describe('GameShell', () => {
     await user.click(screen.getByRole('button', { name: /海淀黄庄/ }));
     expect(screen.getByText(/第 2 \/ 40 天/)).toBeInTheDocument();
   });
+
+  it('shows AQI, weather effects and every active trend in words', () => {
+    renderAppWithState(modernState({ locationId: 'xizhimen', weatherId: 'heat', trends: [
+      { id: 'up', category: 'power-bank', multiplier: 1.7, daysLeft: 2, reason: '雨天需求' },
+      { id: 'down', category: 'outdoor', multiplier: 0.7, daysLeft: 1, reason: '寒潮' },
+    ] }));
+    expect(screen.getByText('AQI')).toBeInTheDocument();
+    expect(screen.getByText('良')).toBeInTheDocument();
+    expect(screen.getByText(/健康 -4/)).toBeInTheDocument();
+    expect(screen.getByText(/充电宝.*上涨.*雨天需求.*剩余 2 天/)).toBeInTheDocument();
+    expect(screen.getByText(/户外.*下跌.*寒潮.*剩余 1 天/)).toBeInTheDocument();
+  });
+
+  it('quotes the actual route and fare before travel', async () => {
+    const state = modernState({ locationId: 'xizhimen', weatherId: 'rain', identityId: 'courier', modern: {
+      ...modernState().modern!, freeTransitUses: 0,
+    } });
+    const { user } = renderAppWithState(state);
+    await user.click(screen.getByRole('tab', { name: '城市' }));
+    const destination = screen.getByRole('button', { name: /海淀黄庄/ });
+    expect(destination).toHaveTextContent('西直门 → 海淀黄庄');
+    expect(destination).toHaveTextContent('4号线');
+    expect(destination).toHaveTextContent('0 次换乘');
+    expect(destination).toHaveTextContent('车费 ¥2');
+  });
+
+  it('localizes system events and gives unknown English events a Chinese fallback', async () => {
+    const { user } = renderAppWithState(modernState({ pendingEvents: [
+      { id: 'hospitalization', kind: 'system', title: 'Hospitalized', body: 'Hospitalized for 2 day(s); debt increased by 2500.', artId: 'hospitalization' },
+      { id: 'mystery', kind: 'system', title: 'Something happened', body: 'Unknown event', artId: 'mystery' },
+    ] }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('住院 2 天');
+    expect(screen.getByRole('dialog')).toHaveTextContent('¥2,500');
+    await user.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('城市消息');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Unknown event');
+  });
+
+  it('restores focus to the page heading when the travel trigger becomes disabled', async () => {
+    const { user } = renderAppWithState(modernState({ locationId: 'xizhimen', cash: 1000, pendingEvents: [] }));
+    await user.click(screen.getByRole('tab', { name: '城市' }));
+    await user.click(screen.getByRole('button', { name: /海淀黄庄/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.getByRole('heading', { name: 'Player的北京日程' })).toHaveFocus();
+  });
 });

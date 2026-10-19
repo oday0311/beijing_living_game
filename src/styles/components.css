@@ -1,6 +1,12 @@
 .desk-section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 2px solid #284b3b; padding-bottom: 9px; }
 .desk-section-head h2 { margin: 0; font-size: 1.08rem; }
 .desk-section-head span { color: var(--desk-muted); font-size: .78rem; white-space: nowrap; }
+.market-signals { border-bottom: 1px solid var(--desk-line); padding: 10px 8px 12px; }
+.market-signals h3 { margin: 0 0 6px; color: var(--desk-muted); font-size: .78rem; }
+.market-signals p, .market-signals ul { margin: 0; padding: 0; }
+.market-signals p { color: var(--desk-muted); font-size: .82rem; }
+.market-signals li { display: flex; align-items: flex-start; gap: 7px; margin: 5px 0; font-size: .83rem; list-style: none; }
+.market-signals svg { flex: none; color: #aa492e; }
 .desk-table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
 .desk-table th, .desk-table td { padding: 11px 9px; border-bottom: 1px solid var(--desk-line); overflow-wrap: anywhere; }
 .desk-table thead { color: var(--desk-muted); font-size: .78rem; }
@@ -11,6 +17,9 @@
 .desk-market tbody tr { cursor: pointer; }
 .desk-market tbody tr:hover, .desk-market tbody tr[aria-selected='true'] { background: #e7eee4; }
 .desk-market tbody tr[aria-selected='true'] th { box-shadow: inset 3px 0 var(--desk-accent); }
+.station-list button { display: grid; align-content: start; justify-content: stretch; gap: 4px; min-height: 92px; }
+.station-list button strong { font-size: .92rem; }
+.station-list button small { white-space: normal; font-size: .75rem; line-height: 1.35; }
 .desk-empty { text-align: left !important; color: var(--desk-muted); }
 .desk-services button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 1px solid transparent; padding: 8px 10px; background: transparent; color: var(--desk-ink); font-weight: 700; }
 .desk-services button:hover:not(:disabled) { border-color: var(--desk-line); background: #e8eee6; }

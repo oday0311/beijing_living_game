@@ -1,7 +1,7 @@
 import type { ContentPack, EventDefinition } from '../content/contract';
 import { failure } from './command-result';
 import { generateMarketWithAllPrices, inventoryCount } from './market';
-import { ageTrends, journal, refreshTrendForecast, settleModernDay, travelCost } from './modern';
+import { ageTrends, journal, refreshTrendForecast, routeLines, settleModernDay, travelCost, travelRoute } from './modern';
 import type { CommandResult, GameEvent, GameState, RandomSource } from './types';
 
 function visibleEvent(event: EventDefinition): GameEvent {
@@ -24,6 +24,32 @@ export function calculateScore(state: GameState): number {
 export function acknowledgeEvent(state: GameState): GameState {
   if (state.pendingEvents.length === 0) return state;
   return { ...state, pendingEvents: state.pendingEvents.slice(1) };
+}
+
+export interface TravelQuote {
+  path: string[];
+  lineIds: string[];
+  transfers: number;
+  fare: number;
+  freeTransitUsed: boolean;
+}
+
+export function quoteTravel(state: GameState, targetId: string, pack: ContentPack): TravelQuote {
+  if (pack.mode === 'classic') return {
+    path: state.locationId ? [state.locationId, targetId] : [targetId],
+    lineIds: ['classic'], transfers: 0, fare: 0, freeTransitUsed: false,
+  };
+  const origin = state.locationId ?? '';
+  const path = travelRoute(pack, origin, targetId);
+  const lineIds = routeLines(pack, path);
+  const freeTransitUsed = (state.modern?.freeTransitUses ?? 0) > 0;
+  let fare = freeTransitUsed ? 0 : travelCost(pack, origin, targetId, state.identityId);
+  const weather = pack.weather.find(({ id }) => id === state.weatherId);
+  const weatherEvent = pack.events.health.find(({ id }) => id === weather?.eventId);
+  if (!freeTransitUsed && weatherEvent?.effect.secondary?.kind === 'transit-fare-delta') {
+    fare = Math.min(8, Math.max(1, fare + (weatherEvent.effect.secondary.amount ?? 0)));
+  }
+  return { path, lineIds, transfers: Math.max(0, lineIds.length - 1), fare, freeTransitUsed };
 }
 
 export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource): GameState {
@@ -173,18 +199,13 @@ export function travel(state: GameState, targetId: string, pack: ContentPack, rn
   let departing = { ...state, locationId: targetId };
   let fare = 0;
   if (pack.mode === 'modern') {
-    try { fare = travelCost(pack, state.locationId ?? '', targetId, state.identityId); }
+    let quote: TravelQuote;
+    try { quote = quoteTravel(state, targetId, pack); }
     catch { return failure(state, 'UNKNOWN_LOCATION', 'No route to this station.'); }
-    const free = (state.modern?.freeTransitUses ?? 0) > 0;
-    if (free) fare = 0;
-    const weather = pack.weather.find(({ id }) => id === state.weatherId);
-    const weatherEvent = pack.events.health.find(({ id }) => id === weather?.eventId);
-    if (!free && weatherEvent?.effect.secondary?.kind === 'transit-fare-delta') {
-      fare = Math.min(8, Math.max(1, fare + (weatherEvent.effect.secondary.amount ?? 0)));
-    }
+    fare = quote.fare;
     if (state.cash < fare) return failure(state, 'INSUFFICIENT_FUNDS', 'Cash cannot cover transit fare.');
     departing = { ...departing, cash: state.cash - fare,
-      modern: state.modern ? { ...state.modern, freeTransitUses: state.modern.freeTransitUses - (free ? 1 : 0) } : null };
+      modern: state.modern ? { ...state.modern, freeTransitUses: state.modern.freeTransitUses - (quote.freeTransitUsed ? 1 : 0) } : null };
   }
   const withTravel = pack.mode === 'modern'
     ? journal(departing, 'Travel', targetId, fare ? { cash: -fare } : undefined)
