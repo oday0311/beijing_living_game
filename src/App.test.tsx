@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { StrictMode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { modernContent } from './content/modern';
 import { createGame } from './engine/create-game';
@@ -52,10 +53,30 @@ describe('App', () => {
   it('focuses the new-game form after confirmed restart', async () => {
     const user = userEvent.setup();
     saveGame(classicState({ playerName: '旧档' }), window.localStorage);
-    render(<App />);
+    render(<StrictMode><App /></StrictMode>);
     await user.click(screen.getByRole('button', { name: '重新开始' }));
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     await user.click(screen.getByRole('button', { name: '确认重新开始' }));
     expect(screen.getByLabelText('角色姓名')).toHaveFocus();
+    expect(focus.mock.instances.filter((element) => element instanceof HTMLElement && element.id === 'player-name')).toHaveLength(1);
+    focus.mockRestore();
+    await user.type(screen.getByLabelText('角色姓名'), '新档');
+    await user.click(screen.getByRole('button', { name: '开始游戏' }));
+    await user.click(screen.getByRole('button', { name: '返回入口' }));
+    expect(screen.getByRole('button', { name: '继续游戏' })).not.toHaveFocus();
+  });
+
+  it('consumes focus after starting from a damaged save', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(CURRENT_SAVE_KEY, '{broken');
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: '新开游戏' }));
+    await user.click(screen.getByRole('button', { name: '确认新开' }));
+    expect(screen.getByLabelText('角色姓名')).toHaveFocus();
+    await user.type(screen.getByLabelText('角色姓名'), '新档');
+    await user.click(screen.getByRole('button', { name: '开始游戏' }));
+    await user.click(screen.getByRole('button', { name: '返回入口' }));
+    expect(screen.getByRole('button', { name: '继续游戏' })).not.toHaveFocus();
   });
 
   it('links each tab to its panel and follows the keyboard tab pattern', async () => {

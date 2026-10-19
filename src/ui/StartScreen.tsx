@@ -14,9 +14,11 @@ interface StartScreenProps {
   onShowScores?: () => void;
   onShowAbout?: () => void;
   focusAfterConfirmation?: boolean;
+  onConfirmationFocusHandled?: () => void;
 }
 
-export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout, focusAfterConfirmation = false }: StartScreenProps) {
+export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout,
+  focusAfterConfirmation = false, onConfirmationFocusHandled }: StartScreenProps) {
   const [mode, setMode] = useState<Mode>('classic');
   const [playerName, setPlayerName] = useState('');
   const [identityId, setIdentityId] = useState<string | null>(null);
@@ -24,12 +26,20 @@ export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowS
   const [confirmRestart, setConfirmRestart] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
+  const focusHandledRef = useRef(false);
 
   useEffect(() => {
-    if (!focusAfterConfirmation) return;
-    if (savedGame) continueRef.current?.focus();
-    else nameRef.current?.focus();
-  }, [focusAfterConfirmation, savedGame]);
+    if (!focusAfterConfirmation) {
+      focusHandledRef.current = false;
+      return;
+    }
+    if (focusHandledRef.current) return;
+    const target = savedGame ? continueRef.current : nameRef.current;
+    if (!target) return;
+    focusHandledRef.current = true;
+    target.focus();
+    onConfirmationFocusHandled?.();
+  }, [focusAfterConfirmation, onConfirmationFocusHandled, savedGame]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

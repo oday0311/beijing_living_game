@@ -135,11 +135,19 @@ export function AppContent({ storage }: { storage?: Storage }) {
   const [confirmNew, setConfirmNew] = useState(false);
   const [focusAfterConfirmation, setFocusAfterConfirmation] = useState(false);
   const [backupAvailable] = useState(() => hasBackup(storage));
+  const recoveryFocusHandled = useRef(false);
 
   useEffect(() => {
-    if (focusAfterConfirmation && (loadResult.kind === 'corrupt' || loadResult.kind === 'incompatible')) {
-      document.getElementById('recovery-title')?.focus();
+    if (!focusAfterConfirmation) {
+      recoveryFocusHandled.current = false;
+      return;
     }
+    if (recoveryFocusHandled.current || (loadResult.kind !== 'corrupt' && loadResult.kind !== 'incompatible')) return;
+    const heading = document.getElementById('recovery-title');
+    if (!heading) return;
+    recoveryFocusHandled.current = true;
+    heading.focus();
+    queueMicrotask(() => setFocusAfterConfirmation(false));
   }, [focusAfterConfirmation, loadResult.kind]);
 
   if (view === 'scores') {
@@ -188,7 +196,8 @@ export function AppContent({ storage }: { storage?: Storage }) {
   return <><StartScreen savedGame={loadResult.kind === 'ok' ? loadResult.state : null} onStart={startGame}
     onContinue={continueGame} onRestart={() => { setFocusAfterConfirmation(true); abandonGame(); }}
     onShowScores={() => setView('scores')} onShowAbout={() => setView('about')}
-    focusAfterConfirmation={focusAfterConfirmation} />
+    focusAfterConfirmation={focusAfterConfirmation}
+    onConfirmationFocusHandled={() => setFocusAfterConfirmation(false)} />
     {!storageAvailable && <p className="storage-warning" role="status">浏览器存储不可用，本局进度只在当前页面有效。</p>}
     {error && <div className="global-error" role="alert">{error}<button type="button" onClick={clearError}>关闭</button></div>}
   </>;
