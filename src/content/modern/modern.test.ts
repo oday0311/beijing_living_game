@@ -84,12 +84,34 @@ describe('modern content', () => {
     expect(modernContent.weather.map((weather) => weather.id)).toEqual([
       'clear', 'rain', 'heat', 'cold', 'haze', 'wind',
     ]);
+    expect(modernContent.weather.map(({ id, eventId }) => [id, eventId])).toEqual([
+      ['clear', 'health/clean-air'], ['rain', 'health/heavy-rain'],
+      ['heat', 'health/heat-wave'], ['cold', 'health/cold-snap'],
+      ['haze', 'health/light-haze'], ['wind', 'health/clear-wind'],
+    ]);
+    const healthEvents = new Map(modernContent.events.health.map((event) => [event.id, event]));
     for (const weather of modernContent.weather) {
       expect(weather.aqiLabel).toBeTruthy();
+      const linkedEvent = healthEvents.get(weather.eventId);
+      expect(linkedEvent).toBeDefined();
+      const secondary = linkedEvent?.effect.secondary;
+      expect(weather.healthEventWeight).toBe(secondary?.kind === 'event-weight' ? secondary.multiplier : 1);
+      expect(weather.categoryMultipliers).toEqual(
+        secondary?.kind === 'category-trend' ? { [secondary.target ?? '']: secondary.multiplier } : {},
+      );
       expect(weather.healthEventWeight).toBeGreaterThan(0);
       for (const multiplier of Object.values(weather.categoryMultipliers)) {
         expect(multiplier).toBeGreaterThan(0);
       }
+    }
+    expect(modernContent.weather.find((weather) => weather.id === 'rain')?.categoryMultipliers).toEqual({});
+    expect(modernContent.events.market.find((event) => event.id === 'market/rain-stockup')?.effect.target)
+      .toBe('power-bank');
+  });
+
+  it('keeps goods, identity and weather IDs unique', () => {
+    for (const definitions of [modernContent.goods, modernContent.identities, modernContent.weather]) {
+      expect(new Set(definitions.map(({ id }) => id)).size).toBe(definitions.length);
     }
   });
 
@@ -126,6 +148,9 @@ describe('modern content', () => {
       }
     }
     expect(JSON.stringify(modernContent.events)).not.toMatch(/有限公司|委员会|集团董事长|先生实名/);
+    expect(modernContent.events.identity.map((event) => event.body).join('')).not.toMatch(/趋势剩余天数|五格位置/);
+    expect(modernContent.events.money.find((event) => event.id === 'money/scam-message')?.body)
+      .not.toMatch(/最多损失五百元/);
   });
 
   it('keeps the approved market trend matrix', () => {

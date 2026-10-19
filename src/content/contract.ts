@@ -23,7 +23,8 @@ export interface EventDefinition {
   effect: EffectDefinition;
 }
 export interface WeatherDefinition {
-  id: string; name: string; aqiLabel: string;
+  id: string; name: string; aqiLabel: string; eventId: string;
+  // Display-only projections of the linked event effect; apply eventId's effect once.
   healthEventWeight: number;
   categoryMultipliers: Record<string, number>;
 }

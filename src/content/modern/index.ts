@@ -1,5 +1,5 @@
 import type { Account } from '../../engine/types';
-import type { ContentPack, EventDefinition, LocationDefinition } from '../contract';
+import type { ContentPack, EventDefinition, LocationDefinition, WeatherDefinition } from '../contract';
 
 const goods: ContentPack['goods'] = [
   { id: 'coffee-beans', name: '咖啡豆', category: 'drink', basePrice: 80, priceRange: 240 },
@@ -106,6 +106,18 @@ const health: EventDefinition[] = [
   event('health/clean-air', 'health', '空气优良', '今天的空气清清爽爽，散步的理由又多了一个。', { kind: 'health-delta', target: 'health', amount: 3, secondary: { kind: 'event-weight', target: 'health-event-weight', multiplier: 0.5, duration: 1 } }),
 ];
 
+function weatherState(id: string, name: string, aqiLabel: string, eventId: string): WeatherDefinition {
+  const linkedEvent = health.find((item) => item.id === eventId);
+  if (!linkedEvent) throw new Error(`Unknown weather event: ${eventId}`);
+  const secondary = linkedEvent.effect.secondary;
+  return {
+    id, name, aqiLabel, eventId,
+    healthEventWeight: secondary?.kind === 'event-weight' ? secondary.multiplier ?? 1 : 1,
+    categoryMultipliers: secondary?.kind === 'category-trend' && secondary.target && secondary.multiplier !== undefined
+      ? { [secondary.target]: secondary.multiplier } : {},
+  };
+}
+
 const money: EventDefinition[] = [
   event('money/wallet-freeze', 'money', '钱包冻结一天', '钱包今天例行核对，暂时只能看不能付。', { kind: 'wallet-freeze', target: 'walletFrozenDays', amount: 1, duration: 1 }),
   event('money/subscription-mistap', 'money', '误点订阅', '手指比大脑快一步，订阅服务先发来了欢迎消息。', { kind: 'account-delta', target: 'wallet', amount: -88 }),
@@ -114,13 +126,13 @@ const money: EventDefinition[] = [
   event('money/refund-arrives', 'money', '退款到账', '那笔差点忘记的退款到账了，钱包悄悄变厚。', { kind: 'account-delta', target: 'wallet', amount: 160 }),
   event('money/credit-review', 'money', '信用复核', '例行复核给信用等级降了一档，提醒写得格外客气。', { kind: 'credit-tier-delta', target: 'credit', amount: -1 }),
   event('money/rent-relief', 'money', '租金减免', '房租结算时少了一笔，连收据看起来都轻快。', { kind: 'account-delta', target: 'cash', amount: 300 }),
-  event('money/scam-message', 'money', '诈骗短信', '一条可疑短信冒充优惠提醒，钱包最多损失五百元。', { kind: 'account-loss-capped', target: 'wallet', amount: 500 }),
+  event('money/scam-message', 'money', '诈骗短信', '一条假优惠短信混进通知栏，账单上多了笔不请自来的支出。', { kind: 'account-loss-capped', target: 'wallet', amount: 500 }),
 ];
 
 const identity: EventDefinition[] = [
   event('identity/courier-route', 'identity', '跑腿骑手：熟路', '常跑的路今天格外顺，下次乘车免付车费。', { kind: 'free-transit-use', target: 'courier', amount: 1 }),
-  event('identity/designer-radar', 'identity', '自由设计师：灵感雷达', '灵感雷达亮了，这轮所有趋势剩余天数一目了然。', { kind: 'reveal-trends', target: 'designer', duration: 1 }),
-  event('identity/shopkeeper-shelf', 'identity', '社区店主：巧置货架', '店主把货架重新摆好，额外腾出了五格位置。', { kind: 'capacity-bonus', target: 'shopkeeper', amount: 5, maxBonus: 25 }),
+  event('identity/designer-radar', 'identity', '自由设计师：灵感雷达', '逛完一圈市集，他已从招牌和话题里看出接下来几天的风向。', { kind: 'reveal-trends', target: 'designer', duration: 1 }),
+  event('identity/shopkeeper-shelf', 'identity', '社区店主：巧置货架', '货架转个角度，原本拥挤的小店竟又宽敞了些。', { kind: 'capacity-bonus', target: 'shopkeeper', amount: 5, maxBonus: 25 }),
   event('identity/graduate-review', 'identity', '应届毕业生：成长记录', '新的成长记录帮信用等级前进一步。', { kind: 'credit-tier-delta', target: 'graduate', amount: 1, condition: 'below-A' }),
 ];
 
@@ -140,12 +152,12 @@ export const modernContent: ContentPack = {
     { id: 'graduate', name: '应届毕业生', description: '正向信用成长加倍。', effect: { kind: 'credit-growth', value: 2 } },
   ],
   weather: [
-    { id: 'clear', name: '晴朗', aqiLabel: '优', healthEventWeight: 0.5, categoryMultipliers: { outdoor: 1 } },
-    { id: 'rain', name: '降雨', aqiLabel: '良', healthEventWeight: 1, categoryMultipliers: { electronics: 1.7 } },
-    { id: 'heat', name: '炎热', aqiLabel: '良', healthEventWeight: 1, categoryMultipliers: { drink: 1.4 } },
-    { id: 'cold', name: '寒冷', aqiLabel: '良', healthEventWeight: 1, categoryMultipliers: { outdoor: 0.7 } },
-    { id: 'haze', name: '轻雾霾', aqiLabel: '轻度污染', healthEventWeight: 1.5, categoryMultipliers: { health: 1.5 } },
-    { id: 'wind', name: '大风', aqiLabel: '优', healthEventWeight: 1, categoryMultipliers: { outdoor: 1.3 } },
+    weatherState('clear', '晴朗', '优', 'health/clean-air'),
+    weatherState('rain', '降雨', '良', 'health/heavy-rain'),
+    weatherState('heat', '炎热', '良', 'health/heat-wave'),
+    weatherState('cold', '寒冷', '良', 'health/cold-snap'),
+    weatherState('haze', '轻雾霾', '轻度污染', 'health/light-haze'),
+    weatherState('wind', '大风', '优', 'health/clear-wind'),
   ],
   events: { market, health, money, identity },
 };
