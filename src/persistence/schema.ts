@@ -74,6 +74,14 @@ export const gameStateSchema: z.ZodType<GameState> = z.strictObject({
   if ((state.mode === 'modern') !== (state.modern !== null)) {
     context.addIssue({ code: 'custom', path: ['modern'], message: 'Mode and modern state do not match' });
   }
+  const validEnding = state.status === 'playing'
+    ? state.day < 40 && state.finalScore === null
+    : state.day === 40
+      ? state.finalScore !== null
+      : state.status === 'lost' && state.finalScore === null;
+  if (!validEnding) {
+    context.addIssue({ code: 'custom', path: ['status'], message: 'Day, status, and final score do not match' });
+  }
 });
 
 export const settingsSchema = z.strictObject({

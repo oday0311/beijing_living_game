@@ -26,11 +26,89 @@ describe('local game saves', () => {
     }
   });
 
+  it('normalizes fractional seeds so new games remain saveable', () => {
+    const storage = memoryStorage();
+    const state = createGame(classicContent, { playerName: 'Player', seed: 7.9, identityId: null });
+    expect(state.seed).toBe(7);
+    saveGame(state, storage);
+    expect(loadGame(storage)).toEqual({ kind: 'ok', state });
+  });
+
+  it('rejects an unfinished day 40 and inconsistent final scores', () => {
+    const storage = memoryStorage();
+    for (const state of [
+      stateWith({ day: 40, status: 'playing', finalScore: null }),
+      stateWith({ day: 12, status: 'playing', finalScore: 1 }),
+      stateWith({ day: 40, status: 'won', finalScore: null }),
+      stateWith({ day: 39, status: 'won', finalScore: 1 }),
+      stateWith({ day: 40, status: 'lost', finalScore: null }),
+      stateWith({ day: 39, status: 'lost', finalScore: 1 }),
+    ]) {
+      expect(importGame(JSON.stringify(state), storage).kind).toBe('corrupt');
+    }
+    expect(importGame(JSON.stringify(stateWith({ day: 39, status: 'lost', finalScore: null })), storage).kind).toBe('ok');
+  });
+
   it('keeps the previous valid save as backup', () => {
     const storage = memoryStorage();
     saveGame(stateWith({ day: 3 }), storage);
     saveGame(stateWith({ day: 4 }), storage);
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 4 } });
+    expect(restoreBackup(storage)).toMatchObject({ day: 3 });
+  });
+
+  it('preserves both previous slots when writing the current slot fails', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 2 }), storage);
+    saveGame(stateWith({ day: 3 }), storage);
+    const originalCurrent = storage.getItem(CURRENT_SAVE_KEY);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === CURRENT_SAVE_KEY) throw new DOMException('blocked', 'QuotaExceededError');
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+    expect(storage.getItem(CURRENT_SAVE_KEY)).toBe(originalCurrent);
+    expect(storage.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+  });
+
+  it('rolls back the current slot when the backup write fails', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 2 }), storage);
+    saveGame(stateWith({ day: 3 }), storage);
+    const originalCurrent = storage.getItem(CURRENT_SAVE_KEY);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === BACKUP_SAVE_KEY) throw new DOMException('blocked', 'QuotaExceededError');
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+    expect(storage.getItem(CURRENT_SAVE_KEY)).toBe(originalCurrent);
+    expect(storage.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+  });
+
+  it('recovers the old current after both backup write and rollback fail', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 2 }), storage);
+    saveGame(stateWith({ day: 3 }), storage);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    let currentWrites = 0;
+    storage.setItem = (key, value) => {
+      if (key === CURRENT_SAVE_KEY && ++currentWrites === 2) {
+        throw new DOMException('blocked', 'QuotaExceededError');
+      }
+      if (key === BACKUP_SAVE_KEY) throw new DOMException('blocked', 'QuotaExceededError');
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 3 } });
+    expect(storage.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+    storage.setItem = setItem;
+    saveGame(stateWith({ day: 5 }), storage);
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 5 } });
     expect(restoreBackup(storage)).toMatchObject({ day: 3 });
   });
 
@@ -40,6 +118,17 @@ describe('local game saves', () => {
     expect(loadGame(storage)).toEqual({ kind: 'corrupt', raw: '{broken' });
     expect(exportCorruptSave(storage)).toBe('{broken');
     expect(() => saveGame(stateWith(), storage)).toThrow();
+    expect(storage.getItem(CURRENT_SAVE_KEY)).toBe('{broken');
+  });
+
+  it('does not hide corrupt current data behind an interrupted transaction', () => {
+    const storage = memoryStorage();
+    storage.setItem('beijing-fushengji.save.transaction.v1',
+      JSON.stringify({ previousCurrent: exportGame(stateWith({ day: 3 })) }));
+    storage.setItem(CURRENT_SAVE_KEY, '{broken');
+    expect(loadGame(storage)).toEqual({ kind: 'corrupt', raw: '{broken' });
+    expect(exportCorruptSave(storage)).toBe('{broken');
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
     expect(storage.getItem(CURRENT_SAVE_KEY)).toBe('{broken');
   });
 
@@ -104,6 +193,16 @@ describe('local game saves', () => {
     expect(loadGame(storage)).toEqual({ kind: 'empty' });
     expect(restoreBackup(storage)).toMatchObject({ day: 5 });
   });
+
+  it('returns a safe state when storage reads are blocked', () => {
+    const storage = memoryStorage();
+    storage.getItem = () => { throw new DOMException('blocked', 'SecurityError'); };
+    expect(loadGame(storage)).toEqual({ kind: 'unavailable' });
+    expect(exportCorruptSave(storage)).toBeNull();
+    expect(restoreBackup(storage)).toBeNull();
+    expect(loadSettings(storage)).toEqual({ soundEnabled: true, animationsEnabled: true, compactDisplay: false });
+    expect(loadScores(storage)).toEqual({ classic: [], modern: [] });
+  });
 });
 
 describe('settings and scores', () => {
@@ -129,5 +228,16 @@ describe('settings and scores', () => {
       score: 999, health: 100, fame: 0, finishedAt: '2026-10-19T00:00:00.000Z' }, storage);
     expect(loadScores(storage).classic.map(({ score }) => score)).toEqual([11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
     expect(loadScores(storage).modern).toHaveLength(1);
+  });
+
+  it('shows valid score entries but preserves mixed corrupt raw data on record', () => {
+    const storage = memoryStorage();
+    const valid = { id: 'valid', playerName: 'Player', mode: 'classic' as const,
+      score: 30, health: 100, fame: 0, finishedAt: '2026-10-19T00:00:00.000Z' };
+    const raw = JSON.stringify([valid, { id: 'bad', score: 'not-a-number' }]);
+    storage.setItem('beijing-fushengji.scores.v1', raw);
+    expect(loadScores(storage).classic).toEqual([valid]);
+    expect(() => recordScore({ ...valid, id: 'next' }, storage)).toThrow();
+    expect(storage.getItem('beijing-fushengji.scores.v1')).toBe(raw);
   });
 });

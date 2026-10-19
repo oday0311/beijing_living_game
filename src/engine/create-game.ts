@@ -11,7 +11,8 @@ export interface CreateGameOptions {
 }
 
 export function createGame(pack: ContentPack, options: CreateGameOptions): GameState {
-  const rng = new SeededRng(options.seed);
+  const seed = options.seed >>> 0;
+  const rng = new SeededRng(seed);
   const identity = pack.identities.find(({ id }) => id === options.identityId);
   const capacityBonus = pack.mode === 'modern' && identity?.effect.kind === 'capacity' ? identity.effect.value : 0;
 
@@ -19,7 +20,7 @@ export function createGame(pack: ContentPack, options: CreateGameOptions): GameS
     schemaVersion: 1,
     mode: pack.mode,
     playerName: options.playerName.trim(),
-    seed: options.seed,
+    seed,
     rngState: rng.state,
     day: 1,
     daysTotal: pack.daysTotal,
