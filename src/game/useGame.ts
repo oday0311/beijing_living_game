@@ -8,12 +8,17 @@ export interface StartGameOptions {
   identityId: string | null;
 }
 
+export interface DispatchResult {
+  applied: boolean;
+  persisted: boolean;
+}
+
 export interface GameSession {
   state: GameState | null;
   loadResult: LoadGameResult;
   storageAvailable: boolean;
   error: string | null;
-  dispatch: (command: GameCommand) => boolean;
+  dispatch: (command: GameCommand) => DispatchResult;
   startGame: (options: StartGameOptions) => void;
   continueGame: () => void;
   restoreSavedGame: () => void;

@@ -8,7 +8,7 @@ import type { EngineErrorCode, GameCommand, GameState } from '../engine/types';
 import { clearCurrentGame, loadGame, recordScore, restoreBackup, saveGame } from '../persistence/storage';
 import type { LoadGameResult } from '../persistence/storage';
 import { GameContext } from './useGame';
-import type { StartGameOptions } from './useGame';
+import type { DispatchResult, StartGameOptions } from './useGame';
 
 const commandErrors: Record<EngineErrorCode, string> = {
   INVALID_QUANTITY: '请输入有效数量。', ITEM_UNAVAILABLE: '当前站点没有这件商品。',
@@ -62,17 +62,18 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
     }
   }, [storage, storageAvailable]);
 
-  const dispatch = useCallback((command: GameCommand): boolean => {
+  const dispatch = useCallback((command: GameCommand): DispatchResult => {
     const current = stateRef.current;
-    if (!current) return false;
+    if (!current) return { applied: false, persisted: false };
     const pack = current.mode === 'classic' ? classicContent : modernContent;
     const result = reduceGameState(current, command, pack);
     if (!result.ok) {
       setError(commandErrors[result.error.code]);
-      return false;
+      return { applied: false, persisted: false };
     }
-    if (result.state === current) return false;
-    if (!persist(result.state)) return false;
+    if (result.state === current) return { applied: false, persisted: false };
+    const persisted = storageAvailable ? persist(result.state) : false;
+    if (storageAvailable && !persisted) return { applied: false, persisted: false };
     updateState(result.state);
     updateLoad({ kind: 'ok', state: result.state });
     setError(null);
@@ -94,7 +95,7 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
         setError('成绩或存档清理失败，本局已保留。');
       }
     }
-    return true;
+    return { applied: true, persisted };
   }, [persist, storage, storageAvailable, updateLoad, updateState]);
 
   const startGame = useCallback((options: StartGameOptions) => {

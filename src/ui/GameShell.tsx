@@ -58,8 +58,8 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
     tabButtons.current[tabs[next].id]?.focus();
   }
   function submit(command: GameCommand) {
-    const applied = dispatch(command);
-    if (applied && (command.type === 'BUY' || command.type === 'SELL')) playCue(command.type === 'BUY' ? 'buy' : 'sell', soundEnabled);
+    const outcome = dispatch(command);
+    if (outcome.applied && outcome.persisted && (command.type === 'BUY' || command.type === 'SELL')) playCue(command.type === 'BUY' ? 'buy' : 'sell', soundEnabled);
     setTrade(null);
     setService(null);
   }
@@ -95,7 +95,8 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         <section id="game-panel-city" aria-labelledby="game-tab-city" className="game-panel desk-city" role="tabpanel" tabIndex={0} hidden={tab !== 'city'}>
           <div className="desk-section-head"><h2>选择下一站</h2><span>旅行将进入下一天</span></div>
           <SubwayMap state={state} pack={pack} disabled={!active} onTravel={(targetId) => {
-            if (dispatch({ type: 'TRAVEL', targetId })) playCue('travel', soundEnabled);
+            const outcome = dispatch({ type: 'TRAVEL', targetId });
+            if (outcome.applied && outcome.persisted) playCue('travel', soundEnabled);
           }} />
         </section>
       </div>

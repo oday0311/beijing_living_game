@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GameProvider } from './GameProvider';
 import { useGame } from './useGame';
 import { CURRENT_SAVE_KEY, loadGame, loadScores, saveGame } from '../persistence/storage';
-import { memoryStorage, stateWith } from '../test/fixtures';
+import { event, memoryStorage, stateWith } from '../test/fixtures';
 
 describe('GameProvider', () => {
   it('loads a saved game for continuation without entering it automatically', () => {
@@ -24,14 +24,14 @@ describe('GameProvider', () => {
     saveGame(initialState, storage);
     const { result } = renderHook(useGame, { wrapper: ({ children }: { children: ReactNode }) =>
       <GameProvider storage={storage} initialState={initialState}>{children}</GameProvider> });
-    let applied = false;
-    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
-    expect(applied).toBe(true);
+    let outcome = { applied: false, persisted: false };
+    act(() => { outcome = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
+    expect(outcome).toEqual({ applied: true, persisted: true });
     const transferred = result.current.state;
     expect(transferred?.bank).toBe(60);
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { bank: 60, cash: 90 } });
-    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 999 }); });
-    expect(applied).toBe(false);
+    act(() => { outcome = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 999 }); });
+    expect(outcome).toEqual({ applied: false, persisted: false });
     expect(result.current.state).toBe(transferred);
     expect(result.current.error).not.toBeNull();
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: transferred });
@@ -48,9 +48,9 @@ describe('GameProvider', () => {
       if (key === CURRENT_SAVE_KEY) throw new Error('quota');
       setItem(key, value);
     };
-    let applied = true;
-    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
-    expect(applied).toBe(false);
+    let outcome = { applied: true, persisted: true };
+    act(() => { outcome = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
+    expect(outcome).toEqual({ applied: false, persisted: false });
     expect(result.current.state).toBe(initialState);
     expect(result.current.error).toMatch(/保存失败/);
   });
@@ -76,9 +76,26 @@ describe('GameProvider', () => {
     expect(result.current.storageAvailable).toBe(false);
     act(() => result.current.startGame({ mode: 'classic', playerName: '小北', identityId: null }));
     expect(result.current.state).not.toBeNull();
-    act(() => result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }));
+    let outcome = { applied: false, persisted: true };
+    act(() => { outcome = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
+    expect(outcome).toEqual({ applied: true, persisted: false });
     expect(result.current.state?.bank).toBe(10);
     expect(result.current.error).toBeNull();
+  });
+
+  it('reports event acknowledgement as applied only when the queue changes', () => {
+    const storage = memoryStorage();
+    const initialState = stateWith({ pendingEvents: [event('Notice')] });
+    saveGame(initialState, storage);
+    const { result } = renderHook(useGame, { wrapper: ({ children }: { children: ReactNode }) =>
+      <GameProvider storage={storage} initialState={initialState}>{children}</GameProvider> });
+    let outcome = { applied: false, persisted: false };
+    act(() => { outcome = result.current.dispatch({ type: 'ACK_EVENT' }); });
+    expect(outcome).toEqual({ applied: true, persisted: true });
+    expect(result.current.state?.pendingEvents).toHaveLength(0);
+    act(() => { outcome = result.current.dispatch({ type: 'ACK_EVENT' }); });
+    expect(outcome).toEqual({ applied: false, persisted: false });
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { pendingEvents: [] } });
   });
 
   it('records a completed game before clearing its current save', () => {

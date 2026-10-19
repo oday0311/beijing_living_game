@@ -1,8 +1,11 @@
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
-import { modernState } from '../test/fixtures';
+import { memoryStorage, modernState } from '../test/fixtures';
 import { renderAppWithState } from '../test/render-game';
 import { playCue } from '../audio/sounds';
+import { GameProvider } from '../game/GameProvider';
+import { AppContent } from '../App';
 
 vi.mock('../audio/sounds', () => ({ playCue: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -49,4 +52,29 @@ it('plays buy and sell cues only after successful trades', async () => {
   await user.click(screen.getByRole('button', { name: '卖出' }));
   await user.click(screen.getByRole('button', { name: '确认卖出' }));
   expect(playCue).toHaveBeenCalledWith('sell', true);
+});
+
+it('applies trades and travel in memory without playing persisted-success cues', async () => {
+  const storage = memoryStorage();
+  storage.getItem = () => { throw new Error('blocked'); };
+  storage.setItem = () => { throw new Error('blocked'); };
+  const user = userEvent.setup();
+  render(<GameProvider storage={storage} initialState={modernState({
+    locationId: 'xizhimen', cash: 1000, market: { 'power-bank': 100 },
+  })}><AppContent storage={storage} /></GameProvider>);
+
+  await user.click(screen.getByRole('button', { name: '买进' }));
+  await user.click(screen.getByRole('button', { name: '确认买进' }));
+  expect(screen.getByRole('button', { name: '卖出' })).toBeEnabled();
+  expect(playCue).not.toHaveBeenCalledWith('buy', true);
+
+  await user.click(screen.getByRole('button', { name: '卖出' }));
+  await user.click(screen.getByRole('button', { name: '确认卖出' }));
+  expect(playCue).not.toHaveBeenCalledWith('sell', true);
+
+  await user.click(screen.getByRole('tab', { name: '城市' }));
+  await user.click(screen.getByRole('button', { name: '国贸' }));
+  await user.click(screen.getByRole('button', { name: '确认换站' }));
+  expect(screen.getByText(/第 2 \/ 40 天/)).toBeInTheDocument();
+  expect(playCue).not.toHaveBeenCalledWith('travel', true);
 });
