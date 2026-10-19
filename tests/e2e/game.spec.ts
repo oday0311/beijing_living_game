@@ -104,6 +104,15 @@ test('settings survive reload and an exported save can be restored after reset',
   await page.getByRole('button', { name: '开始游戏' }).click();
   await page.getByRole('button', { name: '设置' }).click();
   const settings = page.getByRole('dialog', { name: '设置' });
+  const reset = settings.getByRole('button', { name: '重置本局' });
+  await reset.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(settings.getByRole('button', { name: '取消' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(reset).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(settings.getByRole('button', { name: '完成' })).toBeFocused();
   await settings.getByRole('checkbox', { name: '音效' }).uncheck();
   const downloadPromise = page.waitForEvent('download');
   await settings.getByRole('button', { name: '导出存档' }).click();

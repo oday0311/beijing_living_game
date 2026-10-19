@@ -15,6 +15,7 @@ export function SettingsDialog({ settings, notice, onChange, onExport, onImport,
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const resetButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmImport, setConfirmImport] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function SettingsDialog({ settings, notice, onChange, onExport, onImport,
         <button type="button" className="button button-outline" onClick={() => fileRef.current?.click()}>导入存档</button>
         <input ref={fileRef} type="file" accept=".json,application/json" aria-label="选择存档文件" aria-hidden="true" tabIndex={-1} className="visually-hidden"
           onChange={(event) => { void selectFile(event.target.files?.[0]); event.target.value = ''; }} />
-        <button type="button" className="button button-link danger-text" disabled={!canReset} onClick={() => setConfirmReset(true)}>重置本局</button></div>
+        <button ref={resetButtonRef} type="button" className="button button-link danger-text" disabled={!canReset} onClick={() => setConfirmReset(true)}>重置本局</button></div>
       {confirmImport !== null && <div className="settings-confirm"><p>导入会替换当前存档。确认导入？</p>
         <button type="button" className="button button-quiet" onClick={() => setConfirmImport(null)}>取消</button>
         <button type="button" className="button button-danger" onClick={() => {
@@ -55,7 +56,10 @@ export function SettingsDialog({ settings, notice, onChange, onExport, onImport,
           setConfirmImport(null);
         }}>确认导入</button></div>}
       {confirmReset && <div className="settings-confirm"><p>重置本局会清除当前进度。确认重置？</p>
-        <button type="button" className="button button-quiet" onClick={() => setConfirmReset(false)}>取消</button>
+        <button type="button" className="button button-quiet" onClick={() => {
+          resetButtonRef.current?.focus();
+          setConfirmReset(false);
+        }}>取消</button>
         <button type="button" className="button button-danger" onClick={() => { onReset(); onClose(); }}>确认重置</button></div>}
       {message && <p role="alert">{message}</p>}
     </div>
