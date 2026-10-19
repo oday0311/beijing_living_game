@@ -5,7 +5,7 @@ import { createGame } from './create-game';
 import { modernState, ScriptedRng, stubPack, trend } from '../test/fixtures';
 import { settleDay, travel } from './day-cycle';
 import { generateMarket } from './market';
-import { applyEvent, applyIdentity, applyTrends, applyWeather, borrowModern, creditTerms, moveCredit, settleWallet, travelCost } from './modern';
+import { applyEvent, applyIdentity, applyTrends, applyWeather, borrowModern, creditTerms, moveCredit, settleWallet, travelCost, triggeredModern } from './modern';
 import { SeededRng } from './rng';
 import { repayDebt } from './services';
 import { buy, transfer } from './transactions';
@@ -43,7 +43,7 @@ describe('modern mechanics', () => {
     expect(travelCost(modernContent, 'xizhimen', 'guomao', 'courier')).toBe(2);
     expect(travelCost(modernContent, 'xizhimen', 'guomao', null)).toBe(4);
     const result = travel({ ...createGame(modernContent, { playerName: 'Player', seed: 3, identityId: 'courier' }),
-      day: 4, cash: 100 }, 'guomao', modernContent, new SeededRng(3));
+      day: 4, cash: 100, pendingEvents: [] }, 'guomao', modernContent, new SeededRng(3));
     expect(result.ok && result.state.day).toBe(5);
     expect(result.ok && result.state.cash).toBeLessThan(100);
   });
@@ -54,17 +54,196 @@ describe('modern mechanics', () => {
     expect(borrowed).toMatchObject({ ok: true, state: { debt: 5000, bank: 4900 } });
     expect(borrowModern(modernState({ credit: 'C', debt: 100 }), 4901))
       .toMatchObject({ ok: false, error: { code: 'CREDIT_LIMIT' } });
-    const state = modernState({ credit: 'C', debt: 100, cash: 100, identityId: 'graduate' });
-    const first = repayDebt(state, { amount: 1, account: 'cash' }, modernContent);
-    expect(first).toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 2 } } });
-    if (first.ok) expect(repayDebt(first.state, { amount: 1, account: 'cash' }, modernContent))
-      .toMatchObject({ ok: true, state: { credit: 'B', modern: { onTimeRepayments: 1 } } });
+    const opening = createGame(modernContent, { playerName: 'Player', seed: 1, identityId: null });
+    expect(borrowModern(opening, 1)).toMatchObject({ ok: false, error: { code: 'CREDIT_LIMIT' } });
+    const cleared = repayDebt({ ...opening, cash: 3000 }, { amount: 600, account: 'cash' }, modernContent);
+    if (cleared.ok) expect(borrowModern(cleared.state, 100)).toMatchObject({ ok: true });
+    const state = modernState({ credit: 'C', debt: 300, cash: 300, identityId: 'graduate',
+      modern: { ...modernState().modern!, repaymentDueDay: 5, repaymentDueAmount: 30,
+        repaidTowardDue: 0, onTimeRepayments: 0 } });
+    const tiny = repayDebt(state, { amount: 1, account: 'cash' }, modernContent);
+    expect(tiny).toMatchObject({ ok: true, state: { credit: 'C', modern: { repaidTowardDue: 1, onTimeRepayments: 0 } } });
+    if (tiny.ok) {
+      const completed = repayDebt(tiny.state, { amount: 29, account: 'cash' }, modernContent);
+      expect(completed).toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 2,
+        repaymentDueDay: 10, lastOnTimeRepaymentDay: 1 } } });
+      if (completed.ok) {
+        expect(repayDebt(completed.state, { amount: 1, account: 'cash' }, modernContent))
+          .toMatchObject({ ok: true, state: { credit: 'C', modern: { onTimeRepayments: 2 } } });
+        const secondWindow = { ...completed.state, day: 6 };
+        const upgraded = repayDebt(secondWindow, { amount: secondWindow.modern!.repaymentDueAmount, account: 'cash' }, modernContent);
+        expect(upgraded).toMatchObject({ ok: true, state: { credit: 'B', modern: { onTimeRepayments: 1 } } });
+        if (upgraded.ok) expect(upgraded.state.journal.at(-1)?.delta?.credit).toBe(1);
+      }
+    }
     const reward = modernContent.events.money.find(({ id }) => id === 'money/repayment-reward')!;
-    expect(applyEvent(state, reward)).toMatchObject({ credit: 'C', modern: { onTimeRepayments: 2 } });
+    expect(applyEvent(state, reward)).toBe(state);
     const review = modernContent.events.money.find(({ id }) => id === 'money/credit-review')!;
-    expect(applyEvent({ ...state, credit: 'B' }, review).credit).toBe('C');
+    const reviewed = { ...state, credit: 'B' as const };
+    expect(applyEvent(reviewed, review)).toBe(reviewed);
     expect(moveCredit('D', -1)).toBe('D');
     expect(moveCredit('S', 1)).toBe('S');
+  });
+
+  it('penalizes an unpaid installment once after day five and journals it', () => {
+    const pack = { ...stubPack, events: { market: [], health: [], identity: [], money: modernContent.events.money } };
+    const state = modernState({ day: 5, debt: 1000, credit: 'B', modern: {
+      ...modernState().modern!, repaymentDueDay: 5, repaymentDueAmount: 100, repaidTowardDue: 50,
+    } });
+    const next = settleDay(state, pack, new ScriptedRng(Array(50).fill(0.5)));
+    expect(next).toMatchObject({ day: 6, credit: 'C', modern: { overduePenalties: 1, repaymentDueDay: 10,
+      repaidTowardDue: 0 } });
+    expect(next.pendingEvents.map(({ id }) => id)).toEqual(['money/credit-review']);
+    expect(next.journal.some(({ title, delta }) => title === '信用复核' && delta?.credit === -1)).toBe(true);
+    const again = settleDay({ ...next, pendingEvents: [] }, pack, new ScriptedRng(Array(50).fill(0.5)));
+    expect(again.modern?.overduePenalties).toBe(1);
+  });
+
+  it('reveals one forecast day to designers and two for the current reveal event', () => {
+    const marketEvent = { ...modernContent.events.market[0], frequency: 1 };
+    const pack = { ...modernContent, weather: [], goods: [
+      { id: 'coffee-beans', name: 'Coffee', category: 'drink', basePrice: 80, priceRange: 1 },
+    ], events: { ...modernContent.events, market: [marketEvent],
+      health: [], money: [], identity: [] } };
+    const designer = createGame(pack, { playerName: 'Player', seed: 1, identityId: 'designer' });
+    expect(designer.modern?.visibleTrendForecast).toMatchObject([{ day: 2, trends: [{ id: marketEvent.id }] }]);
+    expect(designer.modern?.visibleTrendForecast.every(({ day }) => day <= 2)).toBe(true);
+    const ordinary = createGame(pack, { playerName: 'Player', seed: 1, identityId: null });
+    expect(ordinary.modern?.visibleTrendForecast).toEqual([]);
+    expect(designer.trends).toEqual([]);
+    const before = designer.market['coffee-beans'];
+    const reveal = modernContent.events.identity.find(({ id }) => id === 'identity/designer-radar')!;
+    const shown = applyIdentity(designer, reveal);
+    expect(shown.modern?.revealAllThroughDay).toBe(1);
+    expect(shown.modern?.visibleTrendForecast).toEqual(shown.modern?.forecastMarketEvents);
+    const advanced = settleDay({ ...shown, pendingEvents: [] }, pack, new SeededRng(shown.rngState));
+    expect(advanced.trends.some(({ id }) => id === marketEvent.id)).toBe(true);
+    expect(advanced.market['coffee-beans']).toBeGreaterThan(before);
+    expect(advanced.modern?.revealAllThroughDay).toBeNull();
+    expect(advanced.modern?.visibleTrendForecast.every(({ day }) => day <= 3)).toBe(true);
+  });
+
+  it('uses identity event weights on the same random roll', () => {
+    const event = modernContent.events.market[0];
+    expect(triggeredModern(event, 'market', modernContent, null, new ScriptedRng([0.012]))).toBe(false);
+    expect(triggeredModern(event, 'market', modernContent, 'designer', new ScriptedRng([0.012]))).toBe(true);
+    const identityEvent = modernContent.events.identity[0];
+    expect(triggeredModern(identityEvent, 'identity', modernContent, null, new ScriptedRng([0.012]))).toBe(false);
+    expect(triggeredModern(identityEvent, 'identity', modernContent, 'courier', new ScriptedRng([0.012]))).toBe(true);
+    for (const identity of modernContent.identities) {
+      expect(Object.values(identity.eventWeights ?? {}).some((weight) => weight !== 1)).toBe(true);
+    }
+  });
+
+  it('conditions the graduate identity reward on a qualifying repayment', () => {
+    const event = modernContent.events.identity.find(({ id }) => id === 'identity/graduate-review')!;
+    const state = modernState({ identityId: 'graduate', debt: 300, cash: 300,
+      modern: { ...modernState().modern!, repaymentDueDay: 5, repaymentDueAmount: 30 } });
+    expect(applyIdentity(state, event)).toBe(state);
+    const paid = repayDebt(state, { amount: 30, account: 'cash' }, modernContent);
+    expect(paid.ok).toBe(true);
+    if (paid.ok) expect(applyIdentity(paid.state, event)).toMatchObject({ bank: state.bank + 100,
+      credit: state.credit, pendingEvents: [{ id: event.id }] });
+  });
+
+  it('sets first-day weather and journals travel, interest, events and liquidation', () => {
+    const heat = modernContent.weather.find(({ id }) => id === 'heat')!;
+    const pack = { ...modernContent, weather: [heat], goods: [
+      { id: 'coffee-beans', name: 'Coffee', category: 'drink', basePrice: 80, priceRange: 1 },
+    ], events: { market: [], health: [modernContent.events.health.find(({ id }) => id === heat.eventId)!],
+      money: [], identity: [] } };
+    const initial = createGame(pack, { playerName: 'Player', seed: 7, identityId: null });
+    expect(initial).toMatchObject({ weatherId: 'heat', health: 96, market: { 'coffee-beans': 140 } });
+    expect(initial.trends).toMatchObject([{ category: 'drink', daysLeft: 1 }]);
+    expect(initial.pendingEvents.map(({ id }) => id)).toEqual(['health/heat-wave']);
+    expect(initial.journal.map(({ title }) => title)).toEqual(['热浪']);
+    const before = structuredClone(initial);
+    const travelled = travel({ ...initial, pendingEvents: [], day: 39, cash: 10_000, debt: 0,
+      inventory: { 'coffee-beans': { quantity: 2, averageCost: 80 } } }, 'guomao', pack, new SeededRng(initial.rngState));
+    expect(initial).toEqual(before);
+    expect(travelled).toMatchObject({ ok: true, state: { day: 40, inventory: {}, status: 'won' } });
+    if (travelled.ok) {
+      expect(travelled.state.pendingEvents.map(({ id }) => id)).toEqual([
+        'health/heat-wave', 'journey-complete', 'auto-liquidation',
+      ]);
+      expect(travelled.state.journal.map(({ title }) => title)).toEqual([
+        '热浪', 'Travel', 'Bank interest', 'Debt interest', '热浪', 'Auto-liquidation',
+      ]);
+      expect(travelled.state.journal.map(({ day }) => day)).toEqual([1, 39, 40, 40, 40, 40]);
+      expect(travelled.state.journal.find(({ title }) => title === 'Auto-liquidation')?.delta?.cash).toBeGreaterThan(0);
+    }
+  });
+
+  it('charges the first-day rain fare once and records journalNotice', () => {
+    const rain = modernContent.weather.find(({ id }) => id === 'rain')!;
+    const pack = { ...modernContent, weather: [rain], events: { market: [], money: [], identity: [],
+      health: [modernContent.events.health.find(({ id }) => id === rain.eventId)!] } };
+    const first = createGame(pack, { playerName: 'Player', seed: 1, identityId: null });
+    expect(first).toMatchObject({ weatherId: 'rain', health: 98 });
+    const moved = travel({ ...first, pendingEvents: [] }, 'fuxingmen', pack, new SeededRng(first.rngState));
+    expect(moved).toMatchObject({ ok: true, state: { cash: 1996, day: 2 } });
+    const delay = modernContent.events.health.find(({ id }) => id === 'health/subway-delay')!;
+    const delayed = applyEvent(first, delay);
+    expect(delayed.journal.at(-1)).toMatchObject({ title: delay.title, detail: '地铁延误', delta: { cash: -10 } });
+    const freeze = modernContent.events.money.find(({ id }) => id === 'money/wallet-freeze')!;
+    expect(applyEvent(first, freeze).journal.at(-1)?.delta?.walletFrozenDays).toBe(1);
+  });
+
+  it('consumes each scheduled market event roll only once', () => {
+    const event = { ...modernContent.events.market[0], frequency: 1 };
+    const pack = { ...stubPack, events: { market: [event], health: [], money: [], identity: [] } };
+    const state = modernState({ day: 1, modern: { ...modernState().modern!, forecastMarketEvents: [
+      { day: 2, trends: [{ id: event.id, category: 'coffee-beans', multiplier: 1.8, daysLeft: 3, reason: event.title }] },
+      { day: 3, trends: [] },
+    ] } });
+    const rng = new ScriptedRng([0.5, 0.5, 0.5]);
+    settleDay(state, pack, rng);
+    expect(rng.state).toBe(3); // Two price rolls and one roll for day four's plan.
+    const finalRng = new ScriptedRng([0.5, 0.5]);
+    const final = settleDay({ ...state, day: 39, modern: { ...state.modern!, forecastMarketEvents: [
+      { day: 40, trends: state.modern!.forecastMarketEvents[0].trends },
+    ] } }, pack, finalRng);
+    expect(finalRng.state).toBe(2);
+    expect(final.modern?.forecastMarketEvents).toEqual([]);
+  });
+
+  it('caps rainy transit at eight on a long route', () => {
+    const rain = modernContent.weather.find(({ id }) => id === 'rain')!;
+    const locations = Array.from({ length: 25 }, (_, index) => ({
+      ...stubPack.locations[0], id: `station-${index}`,
+      neighborIds: [index > 0 ? `station-${index - 1}` : '', index < 24 ? `station-${index + 1}` : '']
+        .filter(Boolean),
+    }));
+    const pack = { ...stubPack, locations, weather: [rain], events: { ...stubPack.events,
+      health: [modernContent.events.health.find(({ id }) => id === rain.eventId)!] } };
+    const state = modernState({ locationId: 'station-0', weatherId: 'rain', cash: 100 });
+    const result = travel(state, 'station-24', pack, new SeededRng(state.rngState));
+    expect(result).toMatchObject({ ok: true, state: { cash: 92 } });
+  });
+
+  it('clears a frozen wallet on real travel while preserving cash spending', () => {
+    const state = modernState({ walletFrozenDays: 1, cash: 100, wallet: 100 });
+    expect(transfer(state, { from: 'wallet', to: 'cash', amount: 1 }).ok).toBe(false);
+    const moved = travel(state, 'loc_b', stubPack, new SeededRng(state.rngState));
+    expect(moved).toMatchObject({ ok: true, state: { walletFrozenDays: 0, day: 2 } });
+    if (moved.ok) expect(transfer(moved.state, { from: 'wallet', to: 'cash', amount: 1 }).ok).toBe(true);
+  });
+
+  it('replays modern state exactly and leaves inputs immutable', () => {
+    const run = () => {
+      let state = createGame(modernContent, { playerName: 'Player', seed: 83, identityId: 'courier' });
+      for (const target of ['guomao', 'chaoyangmen', 'xizhimen']) {
+        state = { ...state, pendingEvents: [] };
+        const snapshot = structuredClone(state);
+        const result = travel(state, target, modernContent, new SeededRng(state.rngState));
+        expect(state).toEqual(snapshot);
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error(result.error.message);
+        state = result.state;
+      }
+      return state;
+    };
+    expect(run()).toEqual(run());
   });
 
   it('freezes wallet debits only and resets the daily transfer counter', () => {
@@ -123,5 +302,22 @@ describe('modern mechanics', () => {
       const aged = settleDay(modernState({ trends: [trend({ daysLeft })] }), stubPack, new SeededRng(1)).trends;
       expect(aged.every((entry) => entry.daysLeft >= 0)).toBe(true);
     }));
+    fc.assert(fc.property(fc.integer({ min: 0, max: modernContent.locations.length - 1 }),
+      fc.integer({ min: 0, max: modernContent.locations.length - 1 }), (start, end) => {
+        const origin = modernContent.locations[start].id;
+        const target = modernContent.locations[end].id;
+        const seen = new Set([origin]);
+        const queue: Array<[string, number]> = [[origin, 0]];
+        let edges = 0;
+        for (const [id, distance] of queue) {
+          if (id === target) { edges = distance; break; }
+          for (const neighbor of modernContent.locations.find(({ id: station }) => station === id)!.neighborIds) {
+            if (!seen.has(neighbor)) { seen.add(neighbor); queue.push([neighbor, distance + 1]); }
+          }
+        }
+        const fare = Math.min(8, 3 + Math.floor(edges / 4));
+        expect(travelCost(modernContent, origin, target, null)).toBe(fare);
+        expect(travelCost(modernContent, origin, target, 'courier')).toBe(Math.max(1, Math.floor(fare / 2)));
+      }));
   });
 });

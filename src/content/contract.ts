@@ -10,6 +10,7 @@ export interface LocationDefinition {
 export interface IdentityDefinition {
   id: string; name: string; description: string;
   effect: { kind: 'transit' | 'trend-visibility' | 'capacity' | 'credit-growth'; value: number };
+  eventWeights?: Partial<Record<'market' | 'health' | 'money' | 'identity', number>>;
 }
 export interface EffectDefinition {
   kind: string; target?: string; multiplier?: number; amount?: number;

@@ -4,8 +4,9 @@ export type CreditTier = 'D' | 'C' | 'B' | 'A' | 'S';
 
 export interface InventoryLot { quantity: number; averageCost: number }
 export interface Trend { id: string; category: string; multiplier: number; daysLeft: number; reason: string }
+export interface TrendForecast { day: number; trends: Trend[] }
 export interface GameEvent { id: string; kind: 'market' | 'health' | 'money' | 'weather' | 'identity' | 'system'; title: string; body: string; artId: string }
-export interface JournalEntry { id: string; day: number; title: string; detail: string; delta?: Partial<Record<Account | 'debt' | 'health' | 'fame' | 'credit', number>> }
+export interface JournalEntry { id: string; day: number; title: string; detail: string; delta?: Partial<Record<Account | 'debt' | 'health' | 'fame' | 'credit' | 'capacity' | 'walletFrozenDays', number>> }
 
 export interface GameState {
   schemaVersion: 1;
@@ -36,6 +37,14 @@ export interface GameState {
     shopkeeperCapacityBonus: number;
     freeTransitUses: number;
     revealTrendDaysBonus: number;
+    revealAllThroughDay: number | null;
+    forecastMarketEvents: TrendForecast[];
+    visibleTrendForecast: TrendForecast[];
+    repaymentDueDay: number | null;
+    repaymentDueAmount: number;
+    repaidTowardDue: number;
+    lastOnTimeRepaymentDay: number | null;
+    overduePenalties: number;
   } | null;
   pendingEvents: GameEvent[];
   journal: JournalEntry[];

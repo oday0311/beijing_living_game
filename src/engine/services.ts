@@ -1,6 +1,6 @@
 import type { ContentPack } from '../content/contract';
 import { failure, success } from './command-result';
-import { advanceRepayments, borrowModern } from './modern';
+import { borrowModern, recordRepayment } from './modern';
 import type { CommandResult, GameCommand, GameState } from './types';
 
 type RepayCommand = Omit<Extract<GameCommand, { type: 'REPAY_DEBT' }>, 'type'>;
@@ -35,11 +35,14 @@ export function repayDebt(state: GameState, command: RepayCommand, pack: Content
   if (command.amount > state[command.account]) {
     return failure(state, 'INSUFFICIENT_FUNDS', 'Account cannot cover this repayment.');
   }
-  const repaid = pack.mode === 'modern' ? advanceRepayments(state, 1) : state;
+  const repaid = pack.mode === 'modern' ? recordRepayment(state, command.amount, state.debt - command.amount) : state;
+  const tiers = ['D', 'C', 'B', 'A', 'S'];
+  const creditChange = tiers.indexOf(repaid.credit) - tiers.indexOf(state.credit);
   return success(state, { [command.account]: state[command.account] - command.amount, debt: state.debt - command.amount,
     credit: repaid.credit, modern: repaid.modern }, {
     title: 'Debt repayment', detail: `${command.amount}`,
-    delta: { [command.account]: -command.amount, debt: -command.amount },
+    delta: { [command.account]: -command.amount, debt: -command.amount,
+      ...(creditChange ? { credit: creditChange } : {}) },
   });
 }
 

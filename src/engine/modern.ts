@@ -1,6 +1,6 @@
 import type { ContentPack, EffectDefinition, EventDefinition, WeatherDefinition } from '../content/contract';
 import { failure, success } from './command-result';
-import type { CommandResult, CreditTier, GameState, RandomSource, Trend } from './types';
+import type { CommandResult, CreditTier, GameState, RandomSource, Trend, TrendForecast, JournalEntry } from './types';
 
 const CREDIT_TERMS = {
   D: { limit: 0, dailyRate: 0.15 },
@@ -10,6 +10,44 @@ const CREDIT_TERMS = {
   S: { limit: 60_000, dailyRate: 0.04 },
 } as const;
 const tiers: CreditTier[] = ['D', 'C', 'B', 'A', 'S'];
+const REPAYMENT_PERIOD = 5;
+
+export function installmentAmount(debt: number): number {
+  return debt > 0 ? Math.max(1, Math.ceil(debt * 0.1)) : 0;
+}
+
+export function journal(state: GameState, title: string, detail: string,
+  delta?: JournalEntry['delta'], day = state.day): GameState {
+  return { ...state, journal: [...state.journal, {
+    id: `${day}:${state.journal.length + 1}`, day, title, detail, ...(delta ? { delta } : {}),
+  }] };
+}
+
+export function eventWeight(pack: ContentPack, identityId: string | null, group: 'market' | 'health' | 'money' | 'identity'): number {
+  return pack.identities.find(({ id }) => id === identityId)?.eventWeights?.[group] ?? 1;
+}
+
+export function triggeredModern(event: EventDefinition, group: 'market' | 'health' | 'money' | 'identity',
+  pack: ContentPack, identityId: string | null, rng: RandomSource, extraWeight = 1): boolean {
+  const threshold = Math.min(1000, Math.max(0, (1000 / event.frequency) * eventWeight(pack, identityId, group) * extraWeight));
+  return rng.int(1000) < threshold;
+}
+
+export function planMarketEvents(pack: ContentPack, rng: RandomSource, day: number, identityId: string | null): TrendForecast {
+  return { day, trends: pack.events.market.filter((event) =>
+    triggeredModern(event, 'market', pack, identityId, rng)).map((event) => ({
+    id: event.id, category: event.effect.target ?? '', multiplier: event.effect.multiplier ?? 1,
+    daysLeft: event.effect.duration ?? 1, reason: event.title,
+  })) };
+}
+
+export function refreshTrendForecast(state: GameState): GameState {
+  if (!state.modern) return state;
+  const horizon = state.modern.revealAllThroughDay === state.day ? 2 : state.modern.revealTrendDaysBonus;
+  return { ...state, modern: { ...state.modern,
+    visibleTrendForecast: state.modern.forecastMarketEvents
+      .filter(({ day }) => day > state.day && day <= state.day + horizon) } };
+}
 
 export function creditTerms(tier: CreditTier): { limit: number; dailyRate: number } {
   return CREDIT_TERMS[tier];
@@ -60,32 +98,39 @@ function addTrend(state: GameState, event: EventDefinition, effect: EffectDefini
   return { ...state, trends: [...state.trends.filter((trend) => trend.id !== next.id), next] };
 }
 
-export function applyIdentity(state: GameState, event?: EventDefinition): GameState {
+export function applyIdentity(state: GameState, event?: EventDefinition, eventDay = state.day): GameState {
   if (!event || event.effect.target !== state.identityId || !state.modern) return state;
   const effect = event.effect;
+  if (effect.condition === 'on-time-repayment' && state.modern.lastOnTimeRepaymentDay !== state.day) return state;
   let next = state;
   if (effect.kind === 'free-transit-use') {
     next = { ...state, modern: { ...state.modern, freeTransitUses: state.modern.freeTransitUses + (effect.amount ?? 0) } };
   } else if (effect.kind === 'reveal-trends') {
-    next = { ...state, modern: { ...state.modern, revealTrendDaysBonus: state.modern.revealTrendDaysBonus + (effect.duration ?? 0) } };
+    next = { ...state, modern: { ...state.modern, revealAllThroughDay: eventDay } };
   } else if (effect.kind === 'capacity-bonus') {
     const bonus = Math.min(effect.maxBonus ?? 0, state.modern.shopkeeperCapacityBonus + (effect.amount ?? 0));
     next = { ...state, capacity: state.capacity + bonus - state.modern.shopkeeperCapacityBonus,
       modern: { ...state.modern, shopkeeperCapacityBonus: bonus } };
-  } else if (effect.kind === 'credit-tier-delta' && (!effect.condition || state.credit !== 'A' && state.credit !== 'S')) {
-    next = { ...state, credit: moveCredit(state.credit, effect.amount ?? 0) };
+  } else if (effect.kind === 'repayment-bonus') {
+    next = { ...state, bank: state.bank + (effect.amount ?? 0) };
   }
-  return { ...next, pendingEvents: [...next.pendingEvents, visible(event)] };
+  next = { ...next, pendingEvents: [...next.pendingEvents, visible(event)] };
+  return refreshTrendForecast(journal(next, event.title, event.body,
+    next.capacity !== state.capacity ? { capacity: next.capacity - state.capacity } : next.credit !== state.credit
+      ? { credit: tiers.indexOf(next.credit) - tiers.indexOf(state.credit) } : next.bank !== state.bank
+        ? { bank: next.bank - state.bank } : undefined, eventDay));
 }
 
-export function applyWeather(state: GameState, weather: WeatherDefinition, pack: ContentPack): GameState {
+export function applyWeather(state: GameState, weather: WeatherDefinition, pack: ContentPack, eventDay = state.day): GameState {
   const event = pack.events.health.find((candidate) => candidate.id === weather.eventId);
   if (!event) throw new RangeError(`Unknown weather event: ${weather.eventId}`);
-  return applyEvent({ ...state, weatherId: weather.id }, event);
+  return applyEvent({ ...state, weatherId: weather.id }, event, eventDay);
 }
 
-export function applyEvent(state: GameState, event: EventDefinition): GameState {
+export function applyEvent(state: GameState, event: EventDefinition, eventDay = state.day): GameState {
   const effect = event.effect;
+  if (effect.condition === 'on-time-repayment' && state.modern?.lastOnTimeRepaymentDay !== state.day) return state;
+  if (effect.kind === 'credit-tier-delta' && event.id === 'money/credit-review') return state;
   let next = state;
   if (effect.kind === 'price-trend' || effect.kind === 'category-trend' || effect.kind === 'event-weight') {
     next = addTrend(next, event, effect);
@@ -97,8 +142,6 @@ export function applyEvent(state: GameState, event: EventDefinition): GameState 
     next = { ...next, wallet: Math.max(0, next.wallet - (effect.amount ?? 0)) };
   } else if (effect.kind === 'wallet-freeze') {
     next = { ...next, walletFrozenDays: Math.max(next.walletFrozenDays, effect.duration ?? effect.amount ?? 0) };
-  } else if (effect.kind === 'counter-delta' && effect.target === 'onTimeRepayments' && next.modern) {
-    next = advanceRepayments(next, effect.amount ?? 0);
   } else if (effect.kind === 'credit-tier-delta') {
     next = { ...next, credit: moveCredit(next.credit, effect.amount ?? 0),
       modern: next.modern ? { ...next.modern, onTimeRepayments: 0 } : null };
@@ -106,7 +149,14 @@ export function applyEvent(state: GameState, event: EventDefinition): GameState 
   if (effect.secondary?.kind === 'category-trend' || effect.secondary?.kind === 'event-weight') {
     next = addTrend(next, event, effect.secondary);
   }
-  return { ...next, pendingEvents: [...next.pendingEvents, visible(event)] };
+  next = { ...next, pendingEvents: [...next.pendingEvents, visible(event)] };
+  const delta: JournalEntry['delta'] = {};
+  for (const account of ['cash', 'bank', 'wallet', 'debt', 'health', 'walletFrozenDays'] as const) {
+    if (next[account] !== state[account]) delta[account] = next[account] - state[account];
+  }
+  if (next.credit !== state.credit) delta.credit = tiers.indexOf(next.credit) - tiers.indexOf(state.credit);
+  return journal(next, event.title, effect.journalNotice ?? event.body,
+    Object.keys(delta).length ? delta : undefined, eventDay);
 }
 
 export function advanceRepayments(state: GameState, count: number): GameState {
@@ -123,8 +173,49 @@ export function borrowModern(state: GameState, amount: number): CommandResult {
   if (!Number.isSafeInteger(state.bank + amount) || !Number.isSafeInteger(state.debt + amount)) {
     return failure(state, 'INVALID_QUANTITY', 'Amount exceeds supported range.');
   }
-  return success(state, { bank: state.bank + amount, debt: state.debt + amount },
+  const modern = state.modern && state.debt === 0
+    ? { ...state.modern, repaymentDueDay: state.day + REPAYMENT_PERIOD - 1,
+      repaymentDueAmount: installmentAmount(amount), repaidTowardDue: 0 }
+    : state.modern ? { ...state.modern,
+      repaymentDueAmount: Math.max(state.modern.repaymentDueAmount, installmentAmount(state.debt + amount)) } : null;
+  return success(state, { bank: state.bank + amount, debt: state.debt + amount, modern },
     { title: 'Borrow', detail: `${amount}`, delta: { bank: amount, debt: amount } });
+}
+
+export function recordRepayment(state: GameState, amount: number, remainingDebt: number): GameState {
+  const modern = state.modern;
+  if (!modern || modern.repaymentDueDay === null) return state;
+  if (remainingDebt === 0) {
+    const qualified = state.day <= modern.repaymentDueDay && state.day >= modern.repaymentDueDay - REPAYMENT_PERIOD + 1;
+    const credited = qualified ? advanceRepayments(state, 1) : state;
+    return { ...credited, modern: { ...credited.modern!, repaymentDueDay: null,
+      repaymentDueAmount: 0, repaidTowardDue: 0,
+      lastOnTimeRepaymentDay: qualified ? state.day : modern.lastOnTimeRepaymentDay } };
+  }
+  const inWindow = state.day >= modern.repaymentDueDay - REPAYMENT_PERIOD + 1 && state.day <= modern.repaymentDueDay;
+  if (!inWindow) return state;
+  const progress = modern.repaidTowardDue + amount;
+  if (progress < modern.repaymentDueAmount) {
+    return { ...state, modern: { ...modern, repaidTowardDue: progress } };
+  }
+  const credited = advanceRepayments(state, 1);
+  return { ...credited, modern: { ...credited.modern!, repaymentDueDay: modern.repaymentDueDay + REPAYMENT_PERIOD,
+    repaymentDueAmount: installmentAmount(remainingDebt), repaidTowardDue: 0, lastOnTimeRepaymentDay: state.day } };
+}
+
+export function penalizeOverdue(state: GameState, review: EventDefinition | undefined): GameState {
+  if (!state.modern || state.modern.repaymentDueDay === null
+    || state.day + 1 <= state.modern.repaymentDueDay || state.debt <= 0) return state;
+  const next = { ...state, credit: moveCredit(state.credit, -1), modern: { ...state.modern,
+    onTimeRepayments: 0, overduePenalties: state.modern.overduePenalties + 1,
+    repaymentDueDay: state.modern.repaymentDueDay + REPAYMENT_PERIOD,
+    repaymentDueAmount: installmentAmount(state.debt), repaidTowardDue: 0 } };
+  const notice = review ? visible(review) : {
+    id: 'overdue-penalty', kind: 'money' as const, title: 'Overdue penalty',
+    body: 'The repayment deadline passed.', artId: 'overdue-penalty',
+  };
+  return journal({ ...next, pendingEvents: [...next.pendingEvents, notice] }, notice.title,
+    notice.body, { credit: tiers.indexOf(next.credit) - tiers.indexOf(state.credit) }, state.day + 1);
 }
 
 export function settleWallet(state: GameState): GameState {
@@ -134,30 +225,48 @@ export function settleWallet(state: GameState): GameState {
 
 export function settleModernDay(state: GameState, pack: ContentPack, rng: RandomSource): GameState {
   let next = settleWallet(state);
-  next = { ...next, bank: next.bank + Math.trunc(next.bank * 0.01),
-    debt: next.debt + Math.trunc(next.debt * creditTerms(next.credit).dailyRate) };
-  if (pack.weather.length) next = applyWeather(next, pack.weather[rng.int(pack.weather.length)], pack);
+  const bankInterest = Math.trunc(next.bank * 0.01);
+  const debtInterest = Math.trunc(next.debt * creditTerms(next.credit).dailyRate);
+  next = journal({ ...next, bank: next.bank + bankInterest }, 'Bank interest', `${bankInterest}`, { bank: bankInterest }, state.day + 1);
+  next = journal({ ...next, debt: next.debt + debtInterest }, 'Debt interest', `${debtInterest}`, { debt: debtInterest }, state.day + 1);
+  next = penalizeOverdue(next, pack.events.money.find(({ id }) => id === 'money/credit-review'));
+  if (pack.weather.length) next = applyWeather(next, pack.weather[rng.int(pack.weather.length)], pack, state.day + 1);
   const weatherEventIds = new Set(pack.weather.map(({ eventId }) => eventId));
   const weight = next.trends.filter(({ category, daysLeft }) => category === 'health-event-weight' && daysLeft > 0)
     .reduce((product, trend) => product * trend.multiplier, 1);
   for (const event of pack.events.health) {
     if (weatherEventIds.has(event.id)) continue;
-    if (rng.int(1000) < Math.min(1000, Math.trunc(10 * Math.min(2, weight)))) {
-      next = applyEvent(next, event);
+    if (triggeredModern(event, 'health', pack, next.identityId, rng, Math.min(2, weight))) {
+      next = applyEvent(next, event, state.day + 1);
       break;
     }
   }
-  for (const event of pack.events.market) {
-    if (rng.int(1000) % event.frequency === 0) next = applyEvent(next, event);
+  const scheduled = next.modern?.forecastMarketEvents.find(({ day }) => day === state.day + 1);
+  const events = scheduled ?? planMarketEvents(pack, rng, state.day + 1, next.identityId);
+  for (const forecast of events.trends) {
+    const event = pack.events.market.find(({ id }) => id === forecast.id);
+    if (event) next = applyEvent(next, event, state.day + 1);
   }
   for (const event of pack.events.money) {
-    if (rng.int(1000) % event.frequency === 0) { next = applyEvent(next, event); break; }
+    if (event.id === 'money/credit-review') continue;
+    if (triggeredModern(event, 'money', pack, next.identityId, rng)) {
+      const applied = applyEvent(next, event, state.day + 1);
+      if (applied !== next) { next = applied; break; }
+    }
   }
   for (const event of pack.events.identity) {
-    if (event.effect.target === next.identityId && rng.int(1000) % event.frequency === 0) {
-      next = applyIdentity(next, event);
+    if (event.effect.target === next.identityId && triggeredModern(event, 'identity', pack, next.identityId, rng)) {
+      next = applyIdentity(next, event, state.day + 1);
       break;
     }
+  }
+  if (next.modern) {
+    const retained = next.modern.forecastMarketEvents
+      .filter(({ day }) => day > state.day + 1 && day <= state.daysTotal);
+    const lastDay = Math.max(state.day + 1, ...retained.map(({ day }) => day));
+    const forecastMarketEvents = lastDay < state.daysTotal
+      ? [...retained, planMarketEvents(pack, rng, lastDay + 1, next.identityId)] : retained;
+    next = { ...next, modern: { ...next.modern, forecastMarketEvents } };
   }
   return next;
 }

@@ -58,13 +58,15 @@ describe('game initialization', () => {
       identityId: null,
       walletFrozenDays: 0,
     });
-    expect(first.modern).toEqual({
+    expect(first.modern).toMatchObject({
       onTimeRepayments: 0,
       dailyWalletTransferred: 0,
       shopkeeperCapacityBonus: 0,
       freeTransitUses: 0,
       revealTrendDaysBonus: 0,
     });
+    expect(first.modern?.repaymentDueDay).toBeNull();
+    expect(first.modern?.forecastMarketEvents).toEqual([{ day: 2, trends: [] }, { day: 3, trends: [] }]);
   });
 
   it('copies initial balances and generates each market price from the seeded stream', () => {

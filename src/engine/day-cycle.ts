@@ -1,7 +1,7 @@
 import type { ContentPack, EventDefinition } from '../content/contract';
 import { failure } from './command-result';
 import { generateMarketWithAllPrices, inventoryCount } from './market';
-import { ageTrends, settleModernDay, travelCost } from './modern';
+import { ageTrends, journal, refreshTrendForecast, settleModernDay, travelCost } from './modern';
 import type { CommandResult, GameEvent, GameState, RandomSource } from './types';
 
 function visibleEvent(event: EventDefinition): GameEvent {
@@ -34,17 +34,25 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
     let cash = settled.cash;
     let inventory = settled.inventory;
     let pendingEvents = settled.pendingEvents;
+    let journalEntries = settled.journal;
     let finalScore = settled.finalScore;
     let status = settled.health < 0 ? 'lost' as const : settled.status;
     if (day === state.daysTotal) {
-      cash += Object.entries(inventory).reduce((sum, [id, lot]) => sum + lot.quantity * (market[id] ?? 0), 0);
+      const proceeds = Object.entries(inventory).reduce((sum, [id, lot]) => sum + lot.quantity * (market[id] ?? 0), 0);
+      cash += proceeds;
       inventory = {};
       finalScore = cash + settled.bank + settled.wallet - settled.debt;
       status = settled.health >= 0 && finalScore > 0 ? 'won' : 'lost';
       pendingEvents = [...pendingEvents, systemEvent('journey-complete', 'Forty days have passed.')];
+      if (proceeds > 0) {
+        pendingEvents.push(systemEvent('auto-liquidation', 'Remaining goods were sold at final market prices.'));
+        journalEntries = journal(settled, 'Auto-liquidation', 'Remaining inventory sold at final prices.', { cash: proceeds }, day).journal;
+      }
     }
-    return { ...settled, day, cash, inventory, market, pendingEvents, finalScore, status,
-      trends: ageTrends(settled.trends), rngState: rng.state };
+    return refreshTrendForecast({ ...settled, day, cash, inventory, market, pendingEvents, journal: journalEntries, finalScore, status,
+      trends: ageTrends(settled.trends), rngState: rng.state,
+      modern: settled.modern ? { ...settled.modern,
+        revealAllThroughDay: settled.modern.revealAllThroughDay === day ? day : null } : null });
   }
   const { prices: market, allPrices } = generateMarketWithAllPrices(pack, rng, state);
   let cash = state.cash;
@@ -169,21 +177,19 @@ export function travel(state: GameState, targetId: string, pack: ContentPack, rn
     const weather = pack.weather.find(({ id }) => id === state.weatherId);
     const weatherEvent = pack.events.health.find(({ id }) => id === weather?.eventId);
     if (!free && weatherEvent?.effect.secondary?.kind === 'transit-fare-delta') {
-      fare += weatherEvent.effect.secondary.amount ?? 0;
+      fare = Math.min(8, Math.max(1, fare + (weatherEvent.effect.secondary.amount ?? 0)));
     }
     if (state.cash < fare) return failure(state, 'INSUFFICIENT_FUNDS', 'Cash cannot cover transit fare.');
     departing = { ...departing, cash: state.cash - fare,
       modern: state.modern ? { ...state.modern, freeTransitUses: state.modern.freeTransitUses - (free ? 1 : 0) } : null };
   }
-  const next = settleDay(departing, pack, rng);
-  return {
-    ok: true,
-    state: {
-      ...next,
-      journal: [...state.journal, {
-        id: `${state.day}:${state.journal.length + 1}`, day: state.day,
-        title: 'Travel', detail: targetId, delta: fare ? { cash: -fare } : undefined,
-      }],
-    },
-  };
+  const withTravel = pack.mode === 'modern'
+    ? journal(departing, 'Travel', targetId, fare ? { cash: -fare } : undefined)
+    : departing;
+  const next = settleDay(withTravel, pack, rng);
+  if (pack.mode === 'modern') return { ok: true, state: next };
+  return { ok: true, state: { ...next, journal: [...state.journal, {
+    id: `${state.day}:${state.journal.length + 1}`, day: state.day,
+    title: 'Travel', detail: targetId,
+  }] } };
 }
