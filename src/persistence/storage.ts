@@ -29,30 +29,52 @@ function parseSave(raw: string): Extract<LoadGameResult, { kind: 'ok' | 'corrupt
   return parsed.success ? { kind: 'ok', state: parsed.data } : { kind: 'corrupt', raw };
 }
 
-function previousCurrent(storage: Storage): string | null {
+interface SaveTransaction {
+  phase: 'pending' | 'committed';
+  previousCurrent: string;
+  previousBackup: string | null;
+  nextCurrent: string;
+}
+
+function readTransaction(storage: Storage): SaveTransaction | null {
   const raw = storage.getItem(SAVE_TRANSACTION_KEY);
   if (raw === null) return null;
   try {
     const data: unknown = JSON.parse(raw);
-    if (typeof data === 'object' && data !== null && 'previousCurrent' in data &&
-      typeof data.previousCurrent === 'string' && parseSave(data.previousCurrent).kind === 'ok') {
-      return data.previousCurrent;
+    if (typeof data === 'object' && data !== null &&
+      'phase' in data && (data.phase === 'pending' || data.phase === 'committed') &&
+      'previousCurrent' in data && typeof data.previousCurrent === 'string' &&
+      'previousBackup' in data && (data.previousBackup === null || typeof data.previousBackup === 'string') &&
+      'nextCurrent' in data && typeof data.nextCurrent === 'string' &&
+      parseSave(data.previousCurrent).kind === 'ok' && parseSave(data.nextCurrent).kind === 'ok') {
+      return data as SaveTransaction;
     }
   } catch { /* A damaged transaction marker cannot be trusted. */ }
   throw new Error('Save transaction marker is corrupt');
 }
 
+function restorePreviousBackup(storage: Storage, raw: string | null): void {
+  if (raw === null) storage.removeItem(BACKUP_SAVE_KEY);
+  else storage.setItem(BACKUP_SAVE_KEY, raw);
+}
+
 function recoverPendingSave(storage: Storage, replaceInvalid: boolean): void {
-  const previous = previousCurrent(storage);
-  if (previous === null) return;
+  const transaction = readTransaction(storage);
+  if (transaction === null) return;
+  if (transaction.phase === 'committed') {
+    try { storage.removeItem(SAVE_TRANSACTION_KEY); }
+    catch { /* The committed marker may be replaced by the next transaction. */ }
+    return;
+  }
   const current = storage.getItem(CURRENT_SAVE_KEY);
   if (current !== null && parseSave(current).kind !== 'ok') {
     if (!replaceInvalid) throw new Error('Current save is invalid; export or clear it before saving');
+    restorePreviousBackup(storage, transaction.previousBackup);
     storage.removeItem(SAVE_TRANSACTION_KEY);
     return;
   }
-  const backup = storage.getItem(BACKUP_SAVE_KEY);
-  if (current !== previous && backup !== previous) storage.setItem(CURRENT_SAVE_KEY, previous);
+  storage.setItem(CURRENT_SAVE_KEY, transaction.previousCurrent);
+  restorePreviousBackup(storage, transaction.previousBackup);
   storage.removeItem(SAVE_TRANSACTION_KEY);
 }
 
@@ -62,10 +84,9 @@ export function loadGame(storage?: Storage): LoadGameResult {
     const raw = target.getItem(CURRENT_SAVE_KEY);
     const parsedCurrent = raw === null ? null : parseSave(raw);
     if (parsedCurrent !== null && parsedCurrent.kind !== 'ok') return parsedCurrent;
-    const previous = previousCurrent(target);
-    if (previous !== null && raw !== previous && target.getItem(BACKUP_SAVE_KEY) !== previous) {
-      return parseSave(previous);
-    }
+    const transaction = readTransaction(target);
+    if (transaction?.phase === 'pending') return parseSave(transaction.previousCurrent);
+    if (transaction?.phase === 'committed') return parseSave(transaction.nextCurrent);
     return parsedCurrent ?? { kind: 'empty' };
   } catch {
     return { kind: 'unavailable' };
@@ -83,14 +104,22 @@ function writeGame(state: GameState, storage: Storage, replaceInvalid: boolean):
   if (current !== null && !validCurrent && !replaceInvalid) {
     throw new Error('Current save is invalid; export or clear it before saving');
   }
-  if (validCurrent) storage.setItem(SAVE_TRANSACTION_KEY, JSON.stringify({ previousCurrent: current }));
+  const nextCurrent = JSON.stringify(state);
+  const transaction: SaveTransaction | null = validCurrent ? {
+    phase: 'pending', previousCurrent: current, previousBackup: storage.getItem(BACKUP_SAVE_KEY), nextCurrent,
+  } : null;
+  if (transaction) storage.setItem(SAVE_TRANSACTION_KEY, JSON.stringify(transaction));
   try {
-    storage.setItem(CURRENT_SAVE_KEY, JSON.stringify(state));
-    if (validCurrent) storage.setItem(BACKUP_SAVE_KEY, current);
+    storage.setItem(CURRENT_SAVE_KEY, nextCurrent);
+    if (transaction) {
+      storage.setItem(BACKUP_SAVE_KEY, transaction.previousCurrent);
+      storage.setItem(SAVE_TRANSACTION_KEY, JSON.stringify({ ...transaction, phase: 'committed' }));
+    }
   } catch (error) {
-    if (validCurrent) {
+    if (transaction) {
       try {
-        storage.setItem(CURRENT_SAVE_KEY, current);
+        storage.setItem(CURRENT_SAVE_KEY, transaction.previousCurrent);
+        restorePreviousBackup(storage, transaction.previousBackup);
         storage.removeItem(SAVE_TRANSACTION_KEY);
       } catch (rollbackError) {
         throw new AggregateError([error, rollbackError], 'Failed to update backup and restore current save', { cause: rollbackError });
@@ -98,7 +127,7 @@ function writeGame(state: GameState, storage: Storage, replaceInvalid: boolean):
     }
     throw error;
   }
-  if (validCurrent) {
+  if (transaction) {
     try { storage.removeItem(SAVE_TRANSACTION_KEY); }
     catch { /* The matching backup marks a completed transaction on the next read. */ }
   }
@@ -107,6 +136,7 @@ function writeGame(state: GameState, storage: Storage, replaceInvalid: boolean):
 export function restoreBackup(storage?: Storage): GameState | null {
   try {
     const target = storage ?? localStorage;
+    recoverPendingSave(target, true);
     const raw = target.getItem(BACKUP_SAVE_KEY);
     if (raw === null) return null;
     const result = parseSave(raw);
@@ -135,8 +165,8 @@ export function importGame(raw: string, storage: Storage = localStorage): Exclud
 }
 
 export function clearCurrentGame(storage: Storage = localStorage): void {
-  storage.removeItem(SAVE_TRANSACTION_KEY);
   storage.removeItem(CURRENT_SAVE_KEY);
+  storage.removeItem(SAVE_TRANSACTION_KEY);
 }
 
 export function saveSettings(settings: GameSettings, storage: Storage = localStorage): void {

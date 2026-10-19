@@ -46,7 +46,25 @@ describe('local game saves', () => {
     ]) {
       expect(importGame(JSON.stringify(state), storage).kind).toBe('corrupt');
     }
-    expect(importGame(JSON.stringify(stateWith({ day: 39, status: 'lost', finalScore: null })), storage).kind).toBe('ok');
+    expect(importGame(JSON.stringify(stateWith({ day: 39, status: 'lost', health: -1, finalScore: null })), storage).kind).toBe('ok');
+  });
+
+  it('accepts only end states that match the engine settlement rule', () => {
+    const storage = memoryStorage();
+    const invalid = [
+      stateWith({ day: 39, status: 'lost', health: 1, finalScore: null }),
+      stateWith({ day: 40, status: 'won', health: -1, finalScore: 170 }),
+      stateWith({ day: 40, status: 'won', health: 1, finalScore: 0 }),
+      stateWith({ day: 40, status: 'lost', health: 1, finalScore: 170 }),
+    ];
+    for (const state of invalid) expect(importGame(JSON.stringify(state), storage).kind).toBe('corrupt');
+    const valid = [
+      stateWith({ day: 39, status: 'lost', health: -1, finalScore: null }),
+      stateWith({ day: 40, status: 'won', health: 1, finalScore: 170 }),
+      stateWith({ day: 40, status: 'lost', health: -1, finalScore: 170 }),
+      stateWith({ day: 40, status: 'lost', health: 1, finalScore: 0 }),
+    ];
+    for (const state of valid) expect(importGame(JSON.stringify(state), storage).kind).toBe('ok');
   });
 
   it('keeps the previous valid save as backup', () => {
@@ -112,6 +130,88 @@ describe('local game saves', () => {
     expect(restoreBackup(storage)).toMatchObject({ day: 3 });
   });
 
+  it('never promotes a failed write when current and backup originally match', () => {
+    const storage = memoryStorage();
+    const old = stateWith({ day: 3 });
+    saveGame(old, storage);
+    saveGame(old, storage);
+    const originalCurrent = storage.getItem(CURRENT_SAVE_KEY);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    let currentWrites = 0;
+    storage.setItem = (key, value) => {
+      if (key === CURRENT_SAVE_KEY && ++currentWrites === 2) throw new DOMException('blocked', 'QuotaExceededError');
+      if (key === BACKUP_SAVE_KEY) throw new DOMException('blocked', 'QuotaExceededError');
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+
+    const reloaded = memoryStorage();
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key !== null) reloaded.setItem(key, storage.getItem(key) ?? '');
+    }
+    expect(loadGame(reloaded)).toEqual({ kind: 'ok', state: old });
+    expect(reloaded.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+    saveGame(stateWith({ day: 5 }), reloaded);
+    expect(loadGame(reloaded)).toMatchObject({ kind: 'ok', state: { day: 5 } });
+    expect(reloaded.getItem(BACKUP_SAVE_KEY)).toBe(originalCurrent);
+    expect(restoreBackup(reloaded)).toEqual(old);
+  });
+
+  it('keeps both old slots after a failed commit marker write', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 2 }), storage);
+    saveGame(stateWith({ day: 3 }), storage);
+    const originalCurrent = storage.getItem(CURRENT_SAVE_KEY);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === 'beijing-fushengji.save.transaction.v1' && value.includes('"committed"')) {
+        throw new DOMException('blocked', 'QuotaExceededError');
+      }
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 3 } });
+    expect(storage.getItem(CURRENT_SAVE_KEY)).toBe(originalCurrent);
+    expect(storage.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+  });
+
+  it('recovers the prior backup when commit and backup rollback writes fail', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 2 }), storage);
+    saveGame(stateWith({ day: 3 }), storage);
+    const originalBackup = storage.getItem(BACKUP_SAVE_KEY);
+    const setItem = storage.setItem.bind(storage);
+    let backupWrites = 0;
+    storage.setItem = (key, value) => {
+      if (key === BACKUP_SAVE_KEY && ++backupWrites === 2) throw new DOMException('blocked', 'QuotaExceededError');
+      if (key === 'beijing-fushengji.save.transaction.v1' && value.includes('"committed"')) {
+        throw new DOMException('blocked', 'QuotaExceededError');
+      }
+      setItem(key, value);
+    };
+    expect(() => saveGame(stateWith({ day: 4 }), storage)).toThrow();
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 3 } });
+    storage.setItem = setItem;
+    expect(restoreBackup(storage)).toMatchObject({ day: 2 });
+    expect(storage.getItem(BACKUP_SAVE_KEY)).toBe(originalBackup);
+  });
+
+  it('recognizes a committed save when marker cleanup fails', () => {
+    const storage = memoryStorage();
+    saveGame(stateWith({ day: 3 }), storage);
+    const removeItem = storage.removeItem.bind(storage);
+    storage.removeItem = (key) => {
+      if (key === 'beijing-fushengji.save.transaction.v1') throw new DOMException('blocked', 'SecurityError');
+      removeItem(key);
+    };
+    saveGame(stateWith({ day: 4 }), storage);
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 4 } });
+    expect(storage.getItem('beijing-fushengji.save.transaction.v1')).toContain('"committed"');
+  });
+
   it('preserves malformed raw data for export and does not overwrite it on automatic save', () => {
     const storage = memoryStorage();
     storage.setItem(CURRENT_SAVE_KEY, '{broken');
@@ -124,7 +224,8 @@ describe('local game saves', () => {
   it('does not hide corrupt current data behind an interrupted transaction', () => {
     const storage = memoryStorage();
     storage.setItem('beijing-fushengji.save.transaction.v1',
-      JSON.stringify({ previousCurrent: exportGame(stateWith({ day: 3 })) }));
+      JSON.stringify({ phase: 'pending', previousCurrent: exportGame(stateWith({ day: 3 })),
+        previousBackup: null, nextCurrent: exportGame(stateWith({ day: 4 })) }));
     storage.setItem(CURRENT_SAVE_KEY, '{broken');
     expect(loadGame(storage)).toEqual({ kind: 'corrupt', raw: '{broken' });
     expect(exportCorruptSave(storage)).toBe('{broken');
