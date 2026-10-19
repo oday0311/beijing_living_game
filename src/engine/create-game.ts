@@ -1,5 +1,6 @@
 import type { ContentPack } from '../content/contract';
 import { SeededRng } from './rng';
+import { generateMarket } from './market';
 import type { GameState } from './types';
 
 export interface CreateGameOptions {
@@ -10,10 +11,7 @@ export interface CreateGameOptions {
 
 export function createGame(pack: ContentPack, options: CreateGameOptions): GameState {
   const rng = new SeededRng(options.seed);
-  const market: Record<string, number> = {};
-  for (const good of pack.goods) {
-    market[good.id] = good.basePrice + rng.int(good.priceRange);
-  }
+  const market = generateMarket(pack, rng, { day: 1, trends: [], weatherId: null });
 
   return {
     schemaVersion: 1,

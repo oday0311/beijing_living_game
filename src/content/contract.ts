@@ -14,7 +14,7 @@ export interface IdentityDefinition {
 export interface EventDefinition {
   id: string; kind: GameEvent['kind']; title: string; body: string; artId: string;
   frequency: number;
-  effect: { kind: string; target?: string; multiplier?: number; amount?: number; duration?: number };
+  effect: { kind: string; target?: string; multiplier?: number; amount?: number; debtAmount?: number; duration?: number };
 }
 export interface ContentPack {
   mode: Mode; daysTotal: 40;
