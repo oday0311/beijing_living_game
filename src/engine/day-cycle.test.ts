@@ -147,6 +147,23 @@ describe('classic travel and settlement', () => {
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'death', 'beggar', 'journey-complete', 'auto-liquidation']);
   });
 
+  it('restores original prices for all goods when hospitalization skips directly to day 40', () => {
+    const rolls = Array(52).fill(0.998);
+    rolls[41] = 0.5; // two hospital days
+    rolls[42] = 0; // nearby place
+    rolls[43] = 0; // 2000 bill
+    const rng = new ScriptedRng(rolls);
+    const state = settleDay(classicState({
+      day: 37, health: 84, cash: 0, bank: 0, wallet: 0, debt: 0,
+      inventory: { cosmetics: { quantity: 2, averageCost: 65 } },
+    }), classicContent, rng);
+    expect(Object.keys(state.market)).toHaveLength(classicContent.goods.length);
+    expect(state.market.cosmetics).toBe(244);
+    expect(state).toMatchObject({ day: 40, inventory: {}, cash: 488, debt: 2000, finalScore: -1512, status: 'lost' });
+    expect(state.pendingEvents.map((event) => event.id)).toEqual(['hospitalization', 'journey-complete', 'auto-liquidation']);
+    expect(rng.state).toBe(52);
+  });
+
   it('replays five classic travels with stable balances, lots and event IDs', () => {
     const rolls = Array(226).fill(0.998);
     rolls[11] = 0; // day 1 toy-demand

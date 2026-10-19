@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { classicContent } from '../content/classic';
 import { stubPack, MaxRng, ScriptedRng, stateWith } from '../test/fixtures';
-import { generateMarket, inventoryCount } from './market';
+import { generateMarket, generateMarketWithAllPrices, inventoryCount } from './market';
 
 const context = { day: 1, trends: [], weatherId: null };
 
@@ -37,6 +37,14 @@ describe('market generation', () => {
     pack.goods[0].priceRange = 1;
     expect(generateMarket(pack, new MaxRng(), { ...context, day: 39 }))
       .toEqual({ item_b: 59 });
+  });
+
+  it('retains omitted original prices without drawing additional random values', () => {
+    const rng = new ScriptedRng(Array(11).fill(0.998));
+    const { prices, allPrices } = generateMarketWithAllPrices(classicContent, rng, context);
+    expect(prices.cosmetics).toBeUndefined();
+    expect(allPrices.cosmetics).toBe(244);
+    expect(rng.state).toBe(11);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { ContentPack, EventDefinition } from '../content/contract';
 import { failure } from './command-result';
-import { generateMarket, inventoryCount } from './market';
+import { generateMarketWithAllPrices, inventoryCount } from './market';
 import type { CommandResult, GameEvent, GameState, RandomSource } from './types';
 
 function visibleEvent(event: EventDefinition): GameEvent {
@@ -26,7 +26,7 @@ export function acknowledgeEvent(state: GameState): GameState {
 }
 
 export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource): GameState {
-  const market = generateMarket(pack, rng, state);
+  const { prices: market, allPrices } = generateMarketWithAllPrices(pack, rng, state);
   let cash = state.cash;
   let bank = state.bank + Math.trunc(state.bank * 0.01);
   let debt = state.debt + Math.trunc(state.debt * 0.1);
@@ -113,6 +113,9 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
   }
   if (day === state.daysTotal) {
     pendingEvents.push(systemEvent('journey-complete', 'Forty days have passed.'));
+    for (const [id, price] of Object.entries(allPrices)) {
+      if (market[id] === undefined) market[id] = price;
+    }
     const remaining = Object.entries(inventory).filter(([, lot]) => lot.quantity > 0);
     if (remaining.length > 0) {
       for (const [id, lot] of remaining) cash += lot.quantity * (market[id] ?? 0);
