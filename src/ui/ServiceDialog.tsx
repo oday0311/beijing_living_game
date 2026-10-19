@@ -49,7 +49,7 @@ export function ServiceDialog({ state, kind, onClose, onSubmit }: {
   }
   return <div className="dialog-backdrop"><div ref={dialogRef} className="desk-dialog" role="dialog" aria-modal="true" aria-label={confirmSpend ? '确认大额支出' : labels[kind]}>
     <h2>{confirmSpend ? '确认大额支出' : labels[kind]}</h2>
-    {confirmSpend ? <><p className="dialog-warning">预计支出 ¥{spend.toLocaleString()}，超过现有流动资产的一半。</p>
+    {confirmSpend ? <><p className="dialog-warning">预计支出 ¥{spend.toLocaleString()}，超过{kind === 'housing' ? '当前现金' : '现有流动资产'}的一半。</p>
       <div className="dialog-actions"><button className="button button-quiet" type="button" onClick={() => setConfirmSpend(false)}>返回修改</button>
         <button className="button button-danger" type="button" onClick={submit}>继续支出</button></div></> : <>
       {kind === 'bank' && <><label className="dialog-field">转出账户<select value={from} onChange={(event) => setFrom(event.target.value as Account)}>

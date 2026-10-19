@@ -3,7 +3,7 @@
 .desk-status > div { min-width: 0; min-height: 70px; padding: 12px 16px; border-right: 1px solid var(--desk-line); border-bottom: 1px solid var(--desk-line); }
 .desk-status dt { color: var(--desk-muted); font-size: .78rem; }
 .desk-status dd { margin: 4px 0 0; font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.desk-status .desk-weather-effect { grid-column: 1 / -1; }
+.desk-status .desk-weather-effect { grid-column: span 2; }
 .desk-status .desk-weather-effect dd { white-space: normal; font-size: .9rem; }
 .desk-board { display: grid; gap: 24px; }
 .desk-actionbar { position: fixed; z-index: 5; inset: auto 0 0; min-height: var(--desk-action-height); border-top: 1px solid #bac9be; background: #f9faf5; box-shadow: 0 -6px 24px #1d382414; }

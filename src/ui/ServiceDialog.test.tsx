@@ -55,7 +55,7 @@ describe('ServiceDialog', () => {
     await user.click(screen.getByRole('button', { name: '住房' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('¥25,000');
     await user.click(screen.getByRole('button', { name: '确认扩容' }));
-    expect(screen.getByRole('dialog', { name: '确认大额支出' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '确认大额支出' })).toHaveTextContent('超过当前现金的一半');
     expect(screen.getByText('¥30,000')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '继续支出' }));
     expect(screen.getByText('¥5,000')).toBeInTheDocument();
