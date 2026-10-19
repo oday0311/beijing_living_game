@@ -27,4 +27,24 @@ describe('command reducer', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'ACCOUNT_UNSUPPORTED' } });
     expect(result.state).toBe(state);
   });
+
+  it('dispatches travel and persists its random state', () => {
+    const state = { ...createGame(classicContent, { playerName: 'Player', seed: 1, identityId: null }), locationId: 'jianguomen' };
+    const result = reduceGameState(state, { type: 'TRAVEL', targetId: 'fuxingmen' }, classicContent);
+    expect(result.ok).toBe(true);
+    expect(result.state).toMatchObject({ day: 2, locationId: 'fuxingmen' });
+    expect(result.state.rngState).not.toBe(state.rngState);
+    expect(result.state.journal.at(-1)).toMatchObject({ title: 'Travel', detail: 'fuxingmen' });
+  });
+
+  it('allows the final event to be acknowledged after the game ends', () => {
+    const state = {
+      ...createGame(classicContent, { playerName: 'Player', seed: 1, identityId: null }),
+      status: 'won' as const,
+      pendingEvents: [{ id: 'end', kind: 'system' as const, title: 'End', body: 'End', artId: 'end' }],
+    };
+    const result = reduceGameState(state, { type: 'ACK_EVENT' }, classicContent);
+    expect(result).toMatchObject({ ok: true, state: { pendingEvents: [] } });
+    expect(state.pendingEvents).toHaveLength(1);
+  });
 });
