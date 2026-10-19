@@ -11,15 +11,26 @@ export interface IdentityDefinition {
   id: string; name: string; description: string;
   effect: { kind: 'transit' | 'trend-visibility' | 'capacity' | 'credit-growth'; value: number };
 }
+export interface EffectDefinition {
+  kind: string; target?: string; multiplier?: number; amount?: number;
+  debtAmount?: number; duration?: number; maxBonus?: number;
+  condition?: string; journalNotice?: string;
+  secondary?: Omit<EffectDefinition, 'secondary'>;
+}
 export interface EventDefinition {
   id: string; kind: GameEvent['kind']; title: string; body: string; artId: string;
   frequency: number;
-  effect: { kind: string; target?: string; multiplier?: number; amount?: number; debtAmount?: number; duration?: number };
+  effect: EffectDefinition;
+}
+export interface WeatherDefinition {
+  id: string; name: string; aqiLabel: string;
+  healthEventWeight: number;
+  categoryMultipliers: Record<string, number>;
 }
 export interface ContentPack {
   mode: Mode; daysTotal: 40;
   initial: Pick<GameState, 'cash' | 'bank' | 'wallet' | 'debt' | 'health' | 'fame' | 'credit' | 'capacity' | 'locationId'>;
   goods: GoodDefinition[]; locations: LocationDefinition[]; identities: IdentityDefinition[];
-  weather: EventDefinition[];
+  weather: WeatherDefinition[];
   events: { market: EventDefinition[]; health: EventDefinition[]; money: EventDefinition[]; identity: EventDefinition[] };
 }
