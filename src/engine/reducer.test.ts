@@ -34,7 +34,8 @@ describe('command reducer', () => {
     expect(result.ok).toBe(true);
     expect(result.state).toMatchObject({ day: 2, locationId: 'fuxingmen' });
     expect(result.state.rngState).not.toBe(state.rngState);
-    expect(result.state.journal.at(-1)).toMatchObject({ title: 'Travel', detail: 'fuxingmen' });
+    expect(result.state.journal[0]).toMatchObject({ title: '换站', detail: '复兴门' });
+    expect(result.state.journal.at(-1)).toMatchObject({ title: '债务利息', delta: { debt: 550 } });
   });
 
   it('allows the final event to be acknowledged after the game ends', () => {

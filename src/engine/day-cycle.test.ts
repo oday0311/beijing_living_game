@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { classicContent } from '../content/classic';
+import { createGame } from './create-game';
+import { reduceGameState } from './reducer';
 import { classicState, modernState, ScriptedRng, stubPack } from '../test/fixtures';
 import { acknowledgeEvent, calculateScore, settleDay, travel } from './day-cycle';
 
@@ -12,6 +14,9 @@ describe('classic travel and settlement', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.state).toMatchObject({ day: 2, debt: 6_050, bank: 1_010, locationId: 'fuxingmen' });
+      expect(result.state.journal.map(({ title }) => title).slice(0, 3)).toEqual(['换站', '存款利息', '债务利息']);
+      expect(result.state.journal[1].delta).toEqual({ bank: 10 });
+      expect(result.state.journal[2].delta).toEqual({ debt: 550 });
     }
   });
 
@@ -51,6 +56,10 @@ describe('classic travel and settlement', () => {
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['toy-demand', 'street-attack', 'beggar']);
     expect(acknowledgeEvent(state).pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'beggar']);
     expect(acknowledgeEvent(classicState()).pendingEvents).toEqual([]);
+    expect(state.journal.filter(({ title }) => title === '行情变化' || title === '健康事件' || title === '资金事件')
+      .map(({ title, delta }) => [title, delta])).toEqual([
+        ['行情变化', undefined], ['健康事件', { health: -3 }], ['资金事件', { cash: -250 }],
+      ]);
   });
 
   it('skips bank loss at zero balance and stops after the first triggered money event', () => {
@@ -94,6 +103,7 @@ describe('classic travel and settlement', () => {
     const state = settleDay(classicState({ day: 5, health: 86, debt: 0 }), classicContent, new ScriptedRng(rolls));
     expect(state).toMatchObject({ day: 8, health: 93, debt: 2000, status: 'playing' });
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'hospitalization']);
+    expect(state.journal.find(({ title }) => title === '强制住院')?.delta).toEqual({ debt: 2000, health: 10 });
   });
 
   it('still hospitalizes at day 37 when health drops below the threshold', () => {
@@ -113,6 +123,7 @@ describe('classic travel and settlement', () => {
     const state = settleDay(classicState({ day: 38, health: 2, debt: 100_000 }), classicContent, new ScriptedRng(rolls));
     expect(state).toMatchObject({ day: 39, health: -31, status: 'lost' });
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'death', 'debt-penalty']);
+    expect(state.journal.find(({ title }) => title === '债务惩罚')?.delta).toEqual({ health: -30 });
   });
 
   it('exposes every good on the final day and sells all remaining lots', () => {
@@ -123,6 +134,8 @@ describe('classic travel and settlement', () => {
     expect(state).toMatchObject({ day: 40, inventory: {}, cash: 108, bank: 101, debt: 110, finalScore: 99, status: 'won' });
     expect(calculateScore(state)).toBe(99);
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['journey-complete', 'auto-liquidation']);
+    expect(state.journal.find(({ title }) => title === '最终清仓')?.delta).toEqual({ cash: 108 });
+    expect(state.journal.at(-1)).toMatchObject({ title: '最终得分', detail: expect.stringContaining('99') });
   });
 
   it('keeps normal omissions on arrival at day 39 and loses on a nonpositive final score', () => {
@@ -197,5 +210,67 @@ describe('classic travel and settlement', () => {
     });
     expect(replay).toEqual(expected);
     expect(state.inventory.cigarettes).toEqual({ quantity: 8, averageCost: 100 });
+  });
+
+  it('replays a seeded classic game from opening day through settlement using legal commands', () => {
+    function replay(seed: number) {
+      let state = createGame(classicContent, { playerName: '回放玩家', seed, identityId: null });
+      let commands = 0;
+      while (state.status === 'playing' && commands < 300) {
+        while (state.pendingEvents.length) {
+          const acknowledged = reduceGameState(state, { type: 'ACK_EVENT' }, classicContent);
+          expect(acknowledged.ok).toBe(true);
+          state = acknowledged.state;
+          commands += 1;
+        }
+        for (const [itemId, lot] of Object.entries(state.inventory)) {
+          if (!state.market[itemId]) continue;
+          const sold = reduceGameState(state, { type: 'SELL', itemId, quantity: lot.quantity, account: 'cash' }, classicContent);
+          expect(sold.ok).toBe(true);
+          state = sold.state;
+          commands += 1;
+        }
+        if (state.debt > 0 && state.cash > 1500) {
+          const paid = reduceGameState(state, { type: 'REPAY_DEBT', amount: Math.min(state.debt, state.cash - 1000), account: 'cash' }, classicContent);
+          expect(paid.ok).toBe(true);
+          state = paid.state;
+          commands += 1;
+        }
+        if (state.health < 85 && state.cash >= (100 - state.health) * 3500) {
+          const healed = reduceGameState(state, { type: 'HEAL', points: 100 - state.health, account: 'cash' }, classicContent);
+          expect(healed.ok).toBe(true);
+          state = healed.state;
+          commands += 1;
+        }
+        const cheapest = Object.entries(state.market).filter(([, price]) => price > 0).sort((a, b) => a[1] - b[1])[0];
+        if (cheapest && state.locationId && state.cash >= cheapest[1] && state.debt > 0) {
+          const occupied = Object.values(state.inventory).reduce((sum, lot) => sum + lot.quantity, 0);
+          const quantity = Math.min(state.capacity - occupied, Math.floor(state.cash / cheapest[1]));
+          if (quantity > 0) {
+            const bought = reduceGameState(state, { type: 'BUY', itemId: cheapest[0], quantity, account: 'cash' }, classicContent);
+            expect(bought.ok).toBe(true);
+            state = bought.state;
+            commands += 1;
+          }
+        }
+        const targetId = state.locationId === 'xizhimen' ? 'fuxingmen' : 'xizhimen';
+        const traveled = reduceGameState(state, { type: 'TRAVEL', targetId }, classicContent);
+        expect(traveled.ok).toBe(true);
+        expect(traveled.state.day).toBeGreaterThan(state.day);
+        state = traveled.state;
+        commands += 1;
+      }
+      while (state.pendingEvents.length && commands < 400) {
+        state = reduceGameState(state, { type: 'ACK_EVENT' }, classicContent).state;
+        commands += 1;
+      }
+      return { day: state.day, status: state.status, finalScore: state.finalScore, cash: state.cash,
+        debt: state.debt, health: state.health, eventsLeft: state.pendingEvents.length, commands };
+    }
+    const first = replay(1);
+    expect(first).toEqual(replay(1));
+    expect(first).toEqual({ day: 40, status: 'won', finalScore: 30_970,
+      cash: 30_970, debt: 0, health: 90, eventsLeft: 0, commands: 78 });
+    expect(first.commands).toBeLessThan(400);
   });
 });

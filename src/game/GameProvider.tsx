@@ -90,10 +90,8 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
           fame: result.state.fame,
           finishedAt,
         }, storage);
-        clearCurrentGame(storage);
-        updateLoad({ kind: 'empty' });
       } catch {
-        setError('成绩或存档清理失败，本局已保留。');
+        setError('成绩记录失败，本局存档已保留。');
       }
     }
     return { applied: true, persisted };

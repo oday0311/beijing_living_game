@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { classicContent } from '../content/classic';
+import { modernContent } from '../content/modern';
 import { createGame } from './create-game';
 import { buy, sell, transfer } from './transactions';
 import type { GameState } from './types';
@@ -78,6 +79,28 @@ describe('trading', () => {
     const result = sell(state, { itemId: 'vcd', quantity: 3, account: 'cash' }, classicContent);
     expect(result).toMatchObject({ ok: false, error: { code: 'INSUFFICIENT_INVENTORY' } });
     expect(result.state).toBe(state);
+  });
+
+  it('charges classic reputation once per illicit sale command, regardless of quantity', () => {
+    for (const [itemId, penalty] of [['book', 7], ['liquor', 10]] as const) {
+      const initial = stateWith({ market: { [itemId]: 100 }, fame: 12,
+        inventory: { [itemId]: { quantity: 5, averageCost: 50 } } });
+      const first = sell(initial, { itemId, quantity: 3, account: 'cash' }, classicContent);
+      expect(first.ok).toBe(true);
+      if (!first.ok) continue;
+      expect(first.state.fame).toBe(12 - penalty);
+      expect(first.state.journal.at(-1)?.delta).toMatchObject({ fame: -penalty });
+      const second = sell(first.state, { itemId, quantity: 2, account: 'cash' }, classicContent);
+      expect(second.ok && second.state.fame).toBe(Math.max(0, 12 - penalty * 2));
+    }
+  });
+
+  it('does not charge modern reputation for a sale with the same item ID', () => {
+    const state = stateWith({ mode: 'modern', locationId: 'xizhimen', market: { book: 100 }, fame: 12,
+      inventory: { book: { quantity: 2, averageCost: 50 } } });
+    const pack = { ...modernContent, goods: [...modernContent.goods, classicContent.goods.find(({ id }) => id === 'book')!] };
+    const result = sell(state, { itemId: 'book', quantity: 2, account: 'cash' }, pack);
+    expect(result).toMatchObject({ ok: true, state: { fame: 12 } });
   });
 });
 

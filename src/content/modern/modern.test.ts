@@ -76,8 +76,12 @@ describe('modern content', () => {
     for (const location of locations.values()) {
       expect(location.acceptedAccounts.length).toBeGreaterThan(0);
       expect(location.services.length).toBeGreaterThan(0);
+      for (const service of ['hospital', 'housing'] as const) {
+        if (location.services.includes(service)) expect(location.serviceAccounts?.[service]?.length).toBeGreaterThan(0);
+      }
       expect(Object.keys(location.demand).length).toBeGreaterThan(0);
     }
+    expect(locations.get('dongzhimen')?.serviceAccounts?.hospital).toEqual(['cash', 'wallet']);
   });
 
   it('defines weather states separately from direct-effect events', () => {

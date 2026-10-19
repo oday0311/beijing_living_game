@@ -114,8 +114,8 @@ export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSetting
       <div className="desk-services">{location?.services.includes('bank') && <button type="button" onClick={() => setService('bank')} disabled={!active} title="银行"><Landmark size={18} aria-hidden="true" /><span>银行</span></button>}
         <button type="button" onClick={() => setService('repay')} disabled={!active} title="还债"><Wallet size={18} aria-hidden="true" /><span>还债</span></button>
         {state.mode === 'modern' && <button type="button" onClick={() => setService('borrow')} disabled={!active} title="借款"><BanknoteArrowDown size={18} aria-hidden="true" /><span>借款</span></button>}
-        {state.mode === 'classic' && location?.services.includes('hospital') && <button type="button" onClick={() => setService('heal')} disabled={!active} title="医院"><HeartPulse size={18} aria-hidden="true" /><span>医院</span></button>}
-        {state.mode === 'classic' && location?.services.includes('housing') && <button type="button" onClick={() => setService('housing')} disabled={!active} title="住房"><Building2 size={18} aria-hidden="true" /><span>住房</span></button>}</div></div></div>
+        {location?.services.includes('hospital') && <button type="button" onClick={() => setService('heal')} disabled={!active} title="医院"><HeartPulse size={18} aria-hidden="true" /><span>医院</span></button>}
+        {location?.services.includes('housing') && <button type="button" onClick={() => setService('housing')} disabled={!active} title="住房"><Building2 size={18} aria-hidden="true" /><span>住房</span></button>}</div></div></div>
     {trade && selected && <TradeDialog key={`${trade}-${selected}`} state={state} pack={pack} itemId={selected} kind={trade} onClose={() => setTrade(null)} onSubmit={submit} />}
     {service && <ServiceDialog key={service} state={state} kind={service} onClose={() => setService(null)} onSubmit={submit} />}
     {pending && <EventDialog event={pending} mode={state.mode} onAcknowledge={() => dispatch({ type: 'ACK_EVENT' })} fallbackFocus={headingRef} />}

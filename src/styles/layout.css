@@ -32,7 +32,7 @@
   .desk-status { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .desk-status > div { min-height: 60px; padding: 8px; }
   .desk-status dd { font-size: .85rem; white-space: normal; overflow-wrap: anywhere; }
-  .desk-services button { min-width: 0; padding: 7px 4px; font-size: .76rem; }
+  .desk-services button { flex-direction: column; gap: 2px; min-width: 0; padding: 4px 2px; font-size: .76rem; white-space: nowrap; }
   .desk-services svg { width: 16px; }
   .desk-action-inner { width: min(100% - 24px, 1110px); }
 }

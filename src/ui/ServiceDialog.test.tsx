@@ -61,4 +61,32 @@ describe('ServiceDialog', () => {
     expect(screen.getByText('¥5,000')).toBeInTheDocument();
     expect(screen.getByText('0 / 110')).toBeInTheDocument();
   });
+
+  it('shows modern hospital and housing only at declared stations and pays the quoted account', async () => {
+    const { user } = renderAppWithState(modernState({ locationId: 'xizhimen', cash: 1000, bank: 10_000, health: 98 }));
+    await user.click(screen.getByRole('button', { name: '医院' }));
+    await user.clear(screen.getByLabelText('点数'));
+    await user.type(screen.getByLabelText('点数'), '2');
+    expect(screen.getByRole('dialog')).toHaveTextContent('¥7,000');
+    await user.selectOptions(screen.getByLabelText('支付账户'), 'bank');
+    await user.click(screen.getByRole('button', { name: '确认治疗' }));
+    await user.click(screen.getByRole('button', { name: '继续支出' }));
+    expect(screen.getByText('¥3,000')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '住房' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('¥5,000');
+  });
+
+  it('hides modern hospital and housing controls at a station without those services', () => {
+    renderAppWithState(modernState({ locationId: 'zhongguancun' }));
+    expect(screen.queryByRole('button', { name: '医院' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '住房' })).not.toBeInTheDocument();
+  });
+
+  it('lists only service-declared payment methods at a modern station', async () => {
+    const { user } = renderAppWithState(modernState({ locationId: 'dongzhimen', health: 99 }));
+    await user.click(screen.getByRole('button', { name: '医院' }));
+    expect(screen.getByLabelText('支付账户')).toHaveTextContent('现金');
+    expect(screen.getByLabelText('支付账户')).toHaveTextContent('电子余额');
+    expect(screen.getByLabelText('支付账户')).not.toHaveTextContent('存款');
+  });
 });

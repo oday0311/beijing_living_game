@@ -98,7 +98,7 @@ describe('GameProvider', () => {
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { pendingEvents: [] } });
   });
 
-  it('records a completed game before clearing its current save', () => {
+  it('saves final-day events through reload and records the score once', () => {
     const storage = memoryStorage();
     const initialState = stateWith({ day: 39, locationId: 'xizhimen', cash: 10000, debt: 0 });
     saveGame(initialState, storage);
@@ -106,7 +106,23 @@ describe('GameProvider', () => {
       <GameProvider storage={storage} initialState={initialState}>{children}</GameProvider> });
     act(() => result.current.dispatch({ type: 'TRAVEL', targetId: 'fuxingmen' }));
     expect(result.current.state?.day).toBe(40);
+    const queued = result.current.state?.pendingEvents.map(({ id }) => id);
+    expect(queued?.length).toBeGreaterThan(0);
     expect(loadScores(storage).modern).toHaveLength(1);
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 40, pendingEvents: result.current.state?.pendingEvents } });
+    const resumed = renderHook(useGame, { wrapper: ({ children }: { children: ReactNode }) =>
+      <GameProvider storage={storage}>{children}</GameProvider> });
+    act(() => resumed.result.current.continueGame());
+    expect(resumed.result.current.state?.pendingEvents.map(({ id }) => id)).toEqual(queued);
+    while (resumed.result.current.state?.pendingEvents.length) {
+      act(() => resumed.result.current.dispatch({ type: 'ACK_EVENT' }));
+    }
+    expect(resumed.result.current.state?.finalScore).toBe(result.current.state?.finalScore);
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { pendingEvents: [], finalScore: result.current.state?.finalScore } });
+    expect(loadScores(storage).modern).toHaveLength(1);
+    act(() => resumed.result.current.returnToStart());
+    expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { day: 40 } });
+    act(() => resumed.result.current.abandonGame());
     expect(loadGame(storage)).toEqual({ kind: 'empty' });
   });
 });

@@ -53,14 +53,21 @@ for (const stationIds of Object.values(lines)) {
 const locations: LocationDefinition[] = stations.map(([id, name, favoredCategories]) => {
   const acceptedAccounts: Account[] = id === 'nanluoguxiang' || id === 'tongzhoubeiguan'
     ? ['cash', 'wallet'] : ['cash', 'bank', 'wallet'];
+  const services: LocationDefinition['services'] = id === 'xizhimen' || id === 'guomao' ? ['bank', 'hospital', 'housing']
+    : id === 'haidianhuangzhuang' || id === 'chaoyangmen' ? ['bank', 'hospital']
+      : id === 'dongzhimen' || id === 'sanyuanqiao' ? ['hospital', 'housing'] : ['bank'];
+  const servicePayment: Account[] = id === 'dongzhimen' || id === 'sanyuanqiao'
+    ? ['cash', 'wallet'] : ['cash', 'bank', 'wallet'];
   return {
     id, name,
     lineIds: Object.entries(lines).filter(([, stationIds]) => (stationIds as readonly string[]).includes(id)).map(([lineId]) => lineId),
     neighborIds: [...(neighbors.get(id) ?? [])],
     acceptedAccounts,
-    services: id === 'xizhimen' || id === 'guomao' ? ['bank', 'hospital', 'housing']
-      : id === 'haidianhuangzhuang' || id === 'chaoyangmen' ? ['bank', 'hospital']
-        : id === 'dongzhimen' || id === 'sanyuanqiao' ? ['hospital', 'housing'] : ['bank'],
+    services,
+    serviceAccounts: {
+      ...(services.includes('hospital') ? { hospital: servicePayment } : {}),
+      ...(services.includes('housing') ? { housing: servicePayment } : {}),
+    },
     demand: Object.fromEntries(favoredCategories.map((category) => [category, 1.25])),
   };
 });

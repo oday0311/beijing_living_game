@@ -6,7 +6,7 @@ import { App } from './App';
 import { modernContent } from './content/modern';
 import { createGame } from './engine/create-game';
 import { CURRENT_SAVE_KEY, BACKUP_SAVE_KEY, saveGame } from './persistence/storage';
-import { classicState, memoryStorage } from './test/fixtures';
+import { classicState, event, memoryStorage } from './test/fixtures';
 import { renderAppWithState } from './test/render-game';
 
 describe('App', () => {
@@ -101,6 +101,24 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '继续游戏' })).toHaveFocus();
     await user.click(screen.getByRole('button', { name: '继续游戏' }));
     expect(screen.getByRole('dialog', { name: '本局结算' })).toBeInTheDocument();
+  });
+
+  it('resumes final-day event acknowledgements after reload before showing settlement', async () => {
+    const user = userEvent.setup();
+    const storage = memoryStorage();
+    const finished = classicState({ day: 40, status: 'won', finalScore: 100, cash: 100, debt: 0,
+      pendingEvents: [event('第一条消息'), { ...event('第二条消息'), id: 'second' }] });
+    saveGame(finished, storage);
+    const first = render(<App storage={storage} />);
+    expect(screen.getByRole('button', { name: '继续游戏' })).toBeInTheDocument();
+    first.unmount();
+    render(<App storage={storage} />);
+    await user.click(screen.getByRole('button', { name: '继续游戏' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('第一条消息');
+    await user.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('第二条消息');
+    await user.click(screen.getByRole('button', { name: '知道了' }));
+    expect(screen.getByRole('dialog', { name: '本局结算' })).toHaveTextContent('100');
   });
 
   it('focuses the entry after settings reset but not after cancellation', async () => {

@@ -5,6 +5,7 @@ export interface LocationDefinition {
   id: string; name: string; lineIds: string[]; neighborIds: string[];
   acceptedAccounts: Account[];
   services: Array<'bank' | 'hospital' | 'housing'>;
+  serviceAccounts?: Partial<Record<'hospital' | 'housing', Account[]>>;
   demand: Record<string, number>;
 }
 export interface IdentityDefinition {

@@ -77,12 +77,15 @@ export function sell(state: GameState, command: SellCommand, pack: ContentPack):
   const inventory = { ...state.inventory };
   if (lot.quantity === command.quantity) delete inventory[command.itemId];
   else inventory[command.itemId] = { ...lot, quantity: lot.quantity - command.quantity };
+  const famePenalty = pack.mode === 'classic' ? command.itemId === 'book' ? 7 : command.itemId === 'liquor' ? 10 : 0 : 0;
+  const fameLoss = Math.min(state.fame, famePenalty);
   return success(state, {
     [command.account]: state[command.account] + proceeds,
+    fame: state.fame - fameLoss,
     inventory,
   }, {
-    title: 'Sale', detail: `${command.quantity} ${command.itemId}`,
-    delta: { [command.account]: proceeds },
+    title: '卖出', detail: `${command.quantity} 件${pack.goods.find(({ id }) => id === command.itemId)?.name ?? command.itemId}${fameLoss ? `，声望下降 ${fameLoss}` : ''}`,
+    delta: { [command.account]: proceeds, ...(fameLoss ? { fame: -fameLoss } : {}) },
   });
 }
 
