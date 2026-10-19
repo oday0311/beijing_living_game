@@ -22,7 +22,7 @@ export function useModalFocus(dialogRef: RefObject<HTMLElement | null>, onClose:
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const fallback = fallbackFocus?.current ?? document.querySelector<HTMLElement>('main h1');
     const focusable = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+      'button:not(:disabled), input:not(:disabled):not([tabindex="-1"]), select:not(:disabled), [tabindex="0"]',
     ) ?? [])];
     focusable()[0]?.focus();
     function onKeyDown(event: KeyboardEvent) {

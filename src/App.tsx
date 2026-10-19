@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
-import { ArrowLeft, Download, RotateCcw, Trophy } from 'lucide-react';
+import { Download, RotateCcw } from 'lucide-react';
 import type { GameState } from './engine/types';
 import { GameProvider } from './game/GameProvider';
 import { useGame } from './game/useGame';
-import { BACKUP_SAVE_KEY, loadScores } from './persistence/storage';
+import { BACKUP_SAVE_KEY, exportGame, loadScores, loadSettings, saveSettings } from './persistence/storage';
+import type { GameSettings } from './persistence/schema';
 import { gameStateSchema } from './persistence/schema';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { StartScreen } from './ui/StartScreen';
 import { GameShell } from './ui/GameShell';
+import { AboutDialog } from './ui/AboutDialog';
+import { EndGameDialog } from './ui/EndGameDialog';
+import { HelpDialog } from './ui/HelpDialog';
+import { ScoreboardDialog } from './ui/ScoreboardDialog';
+import { SettingsDialog } from './ui/SettingsDialog';
 import './app.css';
 import './styles/tokens.css';
 import './styles/layout.css';
@@ -40,12 +46,22 @@ function downloadDamagedSave(raw: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 export function AppContent({ storage }: { storage?: Storage }) {
-  const { state, loadResult, storageAvailable, error, clearError, startGame, continueGame, abandonGame, restoreSavedGame } = useGame();
-  const [view, setView] = useState<'home' | 'scores' | 'about'>('home');
+  const { state, loadResult, storageAvailable, error, clearError, startGame, continueGame, abandonGame, restoreSavedGame, importSavedGame, returnToStart, accelerateToFinalDayForTest } = useGame();
+  const [view, setView] = useState<'scores' | 'about' | 'help' | 'settings' | null>(null);
+  const [settings, setSettings] = useState<GameSettings>(() => loadSettings(storage));
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settlementDismissed, setSettlementDismissed] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
   const [focusAfterConfirmation, setFocusAfterConfirmation] = useState(false);
   const [backupAvailable] = useState(() => hasBackup(storage));
   const recoveryFocusHandled = useRef(false);
+
+  useEffect(() => {
+    if (import.meta.env.MODE !== 'test') return;
+    const target = window as Window & { __beijingTest?: { advanceToDay39: () => void } };
+    target.__beijingTest = { advanceToDay39: accelerateToFinalDayForTest };
+    return () => { delete target.__beijingTest; };
+  }, [accelerateToFinalDayForTest]);
 
   useEffect(() => {
     if (!focusAfterConfirmation) {
@@ -60,29 +76,50 @@ export function AppContent({ storage }: { storage?: Storage }) {
     queueMicrotask(() => setFocusAfterConfirmation(false));
   }, [focusAfterConfirmation, loadResult.kind]);
 
-  if (view === 'scores') {
-    const scores = loadScores(storage);
-    return <main className="aux-screen"><div className="aux-inner">
-      <button type="button" className="button button-link" onClick={() => setView('home')}><ArrowLeft size={16} /> 返回</button>
-      <h1><Trophy size={26} /> 本地排行榜</h1>
-      {(['classic', 'modern'] as const).map((mode) => <section key={mode} className="score-section">
-        <h2>{mode === 'classic' ? '经典模式' : '新北京模式'}</h2>
-        {scores[mode].length === 0 ? <p className="empty-note">暂无成绩</p> : <ol>{scores[mode].map((entry) =>
-          <li key={entry.id}><span>{entry.playerName}</span><strong>{entry.score.toLocaleString()}</strong></li>)}</ol>}
-      </section>)}
-    </div></main>;
+  const saved = state ?? (loadResult.kind === 'ok' ? loadResult.state : null);
+  const scores = view === 'scores' || (state && state.status !== 'playing' && state.finalScore !== null) ? loadScores(storage) : null;
+  function updateSettings(next: GameSettings) {
+    try {
+      saveSettings(next, storage);
+      setSettings(next);
+      setSettingsError(null);
+    } catch {
+      setSettingsError('设置无法保存，请检查浏览器存储权限。');
+    }
   }
-  if (view === 'about') return <main className="aux-screen"><div className="aux-inner">
-    <button type="button" className="button button-link" onClick={() => setView('home')}><ArrowLeft size={16} /> 返回</button>
-    <h1>关于北京浮生记</h1><p>四十天，一座城，两种年代。</p>
-    <p>经典模式重现旧作规则；新北京模式讲述当代城市里的另一段日常。</p>
-    <p><a href="/licenses/lucide-license.txt">图标许可与版权说明</a></p>
-  </div></main>;
+  function exportSave() {
+    if (!saved) return;
+    const url = URL.createObjectURL(new Blob([exportGame(saved)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `beijing-fushengji-${saved.mode}-day-${saved.day}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  const auxiliary = <>
+    {view === 'scores' && <ScoreboardDialog scores={scores ?? loadScores(storage)} onClose={() => setView(null)} />}
+    {view === 'about' && <AboutDialog onClose={() => setView(null)} />}
+    {view === 'help' && <HelpDialog onClose={() => setView(null)} />}
+    {view === 'settings' && <SettingsDialog settings={settings} onChange={updateSettings} onClose={() => setView(null)}
+      onExport={exportSave} canExport={!!saved} canReset={!!saved} onImport={importSavedGame}
+      onReset={() => { abandonGame(); setSettlementDismissed(false); }} />}
+    {settingsError && <div className="global-error" role="alert">{settingsError}<button type="button" onClick={() => setSettingsError(null)}>关闭</button></div>}
+  </>;
 
-  if (state) return <><GameShell onShowScores={() => setView('scores')} onShowAbout={() => setView('about')} />
+  if (state) return <div className={`${settings.animationsEnabled ? '' : 'reduced-motion'} ${settings.compactDisplay ? 'compact-display' : ''}`}><GameShell
+    onShowScores={() => setView('scores')} onShowAbout={() => setView('about')} onShowHelp={() => setView('help')} onShowSettings={() => setView('settings')}
+    soundEnabled={settings.soundEnabled} onToggleSound={() => updateSettings({ ...settings, soundEnabled: !settings.soundEnabled })}
+    onShowSettlement={() => setSettlementDismissed(false)} />
+    {state.status !== 'playing' && state.finalScore !== null && state.pendingEvents.length === 0 && !view && !settlementDismissed &&
+      <EndGameDialog state={state} scores={scores ?? loadScores(storage)} onClose={() => setSettlementDismissed(true)}
+        onReturn={() => { setSettlementDismissed(true); returnToStart(); }}
+        onRestart={() => { setSettlementDismissed(false); abandonGame(); }} />}
+    {auxiliary}
     {!storageAvailable && <p className="storage-warning" role="status">浏览器存储不可用，本局进度只在当前页面有效。</p>}
     {error && <div className="global-error" role="alert">{error}<button type="button" onClick={clearError}>关闭</button></div>}
-  </>;
+  </div>;
 
   if (loadResult.kind === 'corrupt' || loadResult.kind === 'incompatible') return <main className="start-screen recovery-screen">
     <div className="start-inner">
@@ -102,15 +139,17 @@ export function AppContent({ storage }: { storage?: Storage }) {
     {confirmNew && <ConfirmDialog title="新开游戏？" confirmLabel="确认新开" onCancel={() => setConfirmNew(false)}
       onConfirm={() => { setFocusAfterConfirmation(true); setConfirmNew(false); abandonGame(); }}>当前无法读取的存档会被清除。</ConfirmDialog>}
     {error && <div className="global-error" role="alert">{error}<button type="button" onClick={clearError}>关闭</button></div>}
+    {auxiliary}
   </main>;
 
   return <><StartScreen savedGame={loadResult.kind === 'ok' ? loadResult.state : null} onStart={startGame}
     onContinue={continueGame} onRestart={() => { setFocusAfterConfirmation(true); abandonGame(); }}
-    onShowScores={() => setView('scores')} onShowAbout={() => setView('about')}
+    onShowScores={() => setView('scores')} onShowAbout={() => setView('about')} onShowHelp={() => setView('help')} onShowSettings={() => setView('settings')}
     focusAfterConfirmation={focusAfterConfirmation}
     onConfirmationFocusHandled={() => setFocusAfterConfirmation(false)} />
     {!storageAvailable && <p className="storage-warning" role="status">浏览器存储不可用，本局进度只在当前页面有效。</p>}
     {error && <div className="global-error" role="alert">{error}<button type="button" onClick={clearError}>关闭</button></div>}
+    {auxiliary}
   </>;
 }
 

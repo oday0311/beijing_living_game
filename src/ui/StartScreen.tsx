@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ArrowRight, Clock3, Info, RotateCcw, Trophy } from 'lucide-react';
+import { ArrowRight, CircleHelp, Clock3, Info, RotateCcw, Settings2, Trophy } from 'lucide-react';
 import { modernContent } from '../content/modern';
 import type { GameState, Mode } from '../engine/types';
 import type { StartGameOptions } from '../game/useGame';
@@ -13,11 +13,13 @@ interface StartScreenProps {
   onRestart?: () => void;
   onShowScores?: () => void;
   onShowAbout?: () => void;
+  onShowHelp?: () => void;
+  onShowSettings?: () => void;
   focusAfterConfirmation?: boolean;
   onConfirmationFocusHandled?: () => void;
 }
 
-export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout,
+export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowScores, onShowAbout, onShowHelp, onShowSettings,
   focusAfterConfirmation = false, onConfirmationFocusHandled }: StartScreenProps) {
   const [mode, setMode] = useState<Mode>('classic');
   const [playerName, setPlayerName] = useState('');
@@ -107,6 +109,8 @@ export function StartScreen({ savedGame, onStart, onContinue, onRestart, onShowS
       <nav className="start-footer" aria-label="其他页面">
         <button type="button" onClick={onShowScores}><Trophy size={17} aria-hidden="true" /> 本地排行榜</button>
         <button type="button" onClick={onShowAbout}><Info size={17} aria-hidden="true" /> 关于</button>
+        <button type="button" onClick={onShowHelp}><CircleHelp size={17} aria-hidden="true" /> 帮助</button>
+        <button type="button" onClick={onShowSettings}><Settings2 size={17} aria-hidden="true" /> 设置</button>
       </nav>
     </div>
     {confirmRestart && <ConfirmDialog title="重新开始？" confirmLabel="确认重新开始"

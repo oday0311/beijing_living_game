@@ -5,7 +5,7 @@ import { modernContent } from '../content/modern';
 import { createGame } from '../engine/create-game';
 import { reduceGameState } from '../engine/reducer';
 import type { EngineErrorCode, GameCommand, GameState } from '../engine/types';
-import { clearCurrentGame, loadGame, recordScore, restoreBackup, saveGame } from '../persistence/storage';
+import { clearCurrentGame, importGame, loadGame, recordScore, restoreBackup, saveGame } from '../persistence/storage';
 import type { LoadGameResult } from '../persistence/storage';
 import { GameContext } from './useGame';
 import type { DispatchResult, StartGameOptions } from './useGame';
@@ -21,6 +21,7 @@ const commandErrors: Record<EngineErrorCode, string> = {
 };
 
 function nextSeed(): number {
+  if (import.meta.env.MODE === 'test') return 20261019;
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     return crypto.getRandomValues(new Uint32Array(1))[0];
   }
@@ -135,6 +136,27 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
     setError(null);
   }, [storage, updateLoad, updateState]);
 
+  const importSavedGame = useCallback((raw: string): boolean => {
+    if (!storageAvailable) {
+      setError('浏览器存储不可用，无法导入存档。');
+      return false;
+    }
+    try {
+      const result = importGame(raw, storage);
+      if (result.kind !== 'ok') {
+        setError(result.kind === 'incompatible' ? '存档版本不兼容。' : '存档文件无法读取。');
+        return false;
+      }
+      updateLoad(result);
+      updateState(result.state);
+      setError(null);
+      return true;
+    } catch {
+      setError('导入失败，原存档仍保留。');
+      return false;
+    }
+  }, [storage, storageAvailable, updateLoad, updateState]);
+
   const abandonGame = useCallback(() => {
     if (storageAvailable) {
       try {
@@ -157,8 +179,19 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
     }
   }, [updateLoad, updateState]);
 
+  const accelerateToFinalDayForTest = useCallback(() => {
+    if (import.meta.env.MODE !== 'test') return;
+    const current = stateRef.current;
+    if (!current || current.status !== 'playing') return;
+    const next = { ...current, day: 39, pendingEvents: [], journal: [...current.journal,
+      { id: 'e2e-day-39', day: 39, title: '测试进度', detail: '端到端测试跳转至第 39 天。' }] };
+    if (!persist(next)) return;
+    updateState(next);
+    updateLoad({ kind: 'ok', state: next });
+  }, [persist, updateLoad, updateState]);
+
   return <GameContext.Provider value={{
-    state, loadResult, storageAvailable, error, dispatch, startGame, continueGame, restoreSavedGame,
-    abandonGame, returnToStart, clearError: () => setError(null),
+    state, loadResult, storageAvailable, error, dispatch, startGame, continueGame, restoreSavedGame, importSavedGame,
+    abandonGame, returnToStart, clearError: () => setError(null), accelerateToFinalDayForTest,
   }}>{children}</GameContext.Provider>;
 }

@@ -22,9 +22,11 @@ export interface GameSession {
   startGame: (options: StartGameOptions) => void;
   continueGame: () => void;
   restoreSavedGame: () => void;
+  importSavedGame: (raw: string) => boolean;
   abandonGame: () => void;
   returnToStart: () => void;
   clearError: () => void;
+  accelerateToFinalDayForTest: () => void;
 }
 
 export const GameContext = createContext<GameSession | null>(null);

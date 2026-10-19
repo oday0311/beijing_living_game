@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { ArrowLeft, BanknoteArrowDown, BookOpen, Building2, HeartPulse, Info, Landmark, MapPin, Trophy, Volume2, VolumeX, Wallet } from 'lucide-react';
+import { ArrowLeft, BanknoteArrowDown, BookOpen, Building2, CircleHelp, HeartPulse, Info, Landmark, MapPin, Settings2, Trophy, Volume2, VolumeX, Wallet } from 'lucide-react';
 import { classicContent } from '../content/classic';
 import { modernContent } from '../content/modern';
 import type { GameCommand } from '../engine/types';
@@ -21,14 +21,16 @@ const tabs = [
 ] as const;
 type Tab = typeof tabs[number]['id'];
 
-export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => void; onShowAbout: () => void }) {
+export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSettings, soundEnabled, onToggleSound, onShowSettlement }: {
+  onShowScores: () => void; onShowAbout: () => void; onShowHelp: () => void; onShowSettings: () => void;
+  soundEnabled: boolean; onToggleSound: () => void; onShowSettlement: () => void;
+}) {
   const { state, dispatch, returnToStart } = useGame();
   const [tab, setTab] = useState<Tab>('market');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [trade, setTrade] = useState<'buy' | 'sell' | null>(null);
   const [service, setService] = useState<ServiceKind | null>(null);
   const [journalOpen, setJournalOpen] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const tabButtons = useRef<Record<Tab, HTMLButtonElement | null>>({ market: null, inventory: null, city: null });
   const journalButton = useRef<HTMLButtonElement>(null);
@@ -44,6 +46,7 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
   const pending = state.pendingEvents[0];
   const selected = selectedId && state.market[selectedId] !== undefined ? selectedId : pack.goods.find(({ id }) => state.market[id] !== undefined)?.id ?? null;
   const active = state.status === 'playing' && !pending;
+  const canTrade = active && state.locationId !== null;
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const index = tabs.findIndex((item) => item.id === tab);
@@ -68,8 +71,10 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
       <nav aria-label="页面导航" className="game-nav">
         <button type="button" title="排行榜" aria-label="排行榜" onClick={onShowScores}><Trophy size={19} /></button>
         <button type="button" title="关于" aria-label="关于" onClick={onShowAbout}><Info size={19} /></button>
+        <button type="button" title="帮助" aria-label="帮助" onClick={onShowHelp}><CircleHelp size={19} /></button>
+        <button type="button" title="设置" aria-label="设置" onClick={onShowSettings}><Settings2 size={19} /></button>
         <button ref={journalButton} type="button" title="旅程日记" aria-label="旅程日记" onClick={() => setJournalOpen(true)}><BookOpen size={19} /></button>
-        <button type="button" title={soundEnabled ? '关闭音效' : '开启音效'} aria-label={soundEnabled ? '关闭音效' : '开启音效'} aria-pressed={soundEnabled} onClick={() => setSoundEnabled((value) => !value)}>{soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}</button>
+        <button type="button" title={soundEnabled ? '关闭音效' : '开启音效'} aria-label={soundEnabled ? '关闭音效' : '开启音效'} aria-pressed={soundEnabled} onClick={onToggleSound}>{soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}</button>
         <button type="button" className="back-link" onClick={returnToStart}><ArrowLeft size={17} /> 返回入口</button>
       </nav></header>
     <div className="game-content desk-content">
@@ -77,7 +82,8 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
         <h1 ref={headingRef} tabIndex={-1}>{state.playerName}的北京日程</h1></div><span className="location-chip"><MapPin size={17} aria-hidden="true" /> {location?.name ?? '尚未出发'}</span></div>
       <StatusStrip state={state} pack={pack} />
       {state.status !== 'playing' && <section className="end-notice"><div><h2>{state.status === 'won' ? '这一程，收获颇丰' : '这一程，暂告一段落'}</h2>
-        <p>{state.finalScore === null ? '旅程已经结束。' : `最终得分：${state.finalScore.toLocaleString()}`}</p></div></section>}
+        <p>{state.finalScore === null ? '旅程已经结束。' : `最终得分：${state.finalScore.toLocaleString()}`}</p></div>
+        {state.finalScore !== null && <button type="button" className="button button-outline" onClick={onShowSettlement}>查看结算</button>}</section>}
       <div className="game-tabs" role="tablist" aria-label="游戏视图" onKeyDown={handleTabKeyDown}>
         {tabs.map(({ id, label }) => <button key={id} ref={(node) => { tabButtons.current[id] = node; }} id={`game-tab-${id}`}
           type="button" role="tab" aria-controls={`game-panel-${id}`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
@@ -102,8 +108,8 @@ export function GameShell({ onShowScores, onShowAbout }: { onShowScores: () => v
       </div>
     </div>
     <div className="desk-actionbar"><div className="desk-action-inner"><span className="desk-selected">{selected ? pack.goods.find(({ id }) => id === selected)?.name : '今日无商品'}</span>
-      <div className="desk-actions"><button className="button button-primary" type="button" disabled={!active || !selected} onClick={() => setTrade('buy')}>买进</button>
-        <button className="button button-outline" type="button" disabled={!active || !selected || !state.inventory[selected]?.quantity} onClick={() => setTrade('sell')}>卖出</button></div>
+      <div className="desk-actions"><button className="button button-primary" type="button" disabled={!canTrade || !selected} onClick={() => setTrade('buy')}>买进</button>
+        <button className="button button-outline" type="button" disabled={!canTrade || !selected || !state.inventory[selected]?.quantity} onClick={() => setTrade('sell')}>卖出</button></div>
       <div className="desk-services">{location?.services.includes('bank') && <button type="button" onClick={() => setService('bank')} disabled={!active} title="银行"><Landmark size={18} aria-hidden="true" /><span>银行</span></button>}
         <button type="button" onClick={() => setService('repay')} disabled={!active} title="还债"><Wallet size={18} aria-hidden="true" /><span>还债</span></button>
         {state.mode === 'modern' && <button type="button" onClick={() => setService('borrow')} disabled={!active} title="借款"><BanknoteArrowDown size={18} aria-hidden="true" /><span>借款</span></button>}

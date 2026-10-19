@@ -24,6 +24,11 @@ describe('GameShell', () => {
     expect(screen.getByRole('button', { name: '医院' })).toBeInTheDocument();
   });
 
+  it('requires the first classic station before trading', () => {
+    renderAppWithState(classicState({ locationId: null, market: { vcd: 31 } }));
+    expect(screen.getByRole('button', { name: '买进' })).toBeDisabled();
+  });
+
   it('acknowledges an event in a modal before travel', async () => {
     const { user } = renderAppWithState(modernState({ locationId: 'xizhimen', pendingEvents: [{ id: 'news', kind: 'system', title: '今日消息', body: '一条新消息', artId: 'news' }] }));
     expect(screen.getByRole('dialog', { name: '今日消息' })).toBeInTheDocument();
