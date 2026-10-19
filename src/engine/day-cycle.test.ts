@@ -104,6 +104,9 @@ describe('classic travel and settlement', () => {
     expect(state).toMatchObject({ day: 8, health: 93, debt: 2000, status: 'playing' });
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['street-attack', 'hospitalization']);
     expect(state.journal.find(({ title }) => title === '强制住院')?.delta).toEqual({ debt: 2000, health: 10 });
+    expect(state.journal.map(({ title, day }) => [title, day])).toEqual([
+      ['存款利息', 6], ['债务利息', 6], ['健康事件', 6], ['强制住院', 8],
+    ]);
   });
 
   it('still hospitalizes at day 37 when health drops below the threshold', () => {
@@ -174,6 +177,25 @@ describe('classic travel and settlement', () => {
     expect(state.market.cosmetics).toBe(244);
     expect(state).toMatchObject({ day: 40, inventory: {}, cash: 488, debt: 2000, finalScore: -1512, status: 'lost' });
     expect(state.pendingEvents.map((event) => event.id)).toEqual(['hospitalization', 'journey-complete', 'auto-liquidation']);
+    expect(state.journal.map(({ title, day }) => [title, day])).toEqual([
+      ['存款利息', 38], ['债务利息', 38], ['强制住院', 40], ['最终清仓', 40], ['最终得分', 40],
+    ]);
+    expect(rng.state).toBe(52);
+  });
+
+  it('dates debt penalties and final settlement after a two-day hospital stay', () => {
+    const rolls = Array(52).fill(0.998);
+    rolls[41] = 0.5;
+    rolls[42] = 0;
+    rolls[43] = 0;
+    const rng = new ScriptedRng(rolls);
+    const state = settleDay(classicState({ day: 37, health: 84, debt: 100_000,
+      inventory: { cosmetics: { quantity: 2, averageCost: 65 } } }), classicContent, rng);
+    expect(state.day).toBe(40);
+    expect(state.journal.map(({ title, day }) => [title, day])).toEqual([
+      ['存款利息', 38], ['债务利息', 38], ['强制住院', 40],
+      ['债务惩罚', 40], ['最终清仓', 40], ['最终得分', 40],
+    ]);
     expect(rng.state).toBe(52);
   });
 

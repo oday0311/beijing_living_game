@@ -88,13 +88,12 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
   let bank = state.bank + Math.trunc(state.bank * 0.01);
   let debt = state.debt + Math.trunc(state.debt * 0.1);
   let health = state.health;
-  let hospitalDays = 0;
   const inventory = { ...state.inventory };
   const pendingEvents = [...state.pendingEvents];
   const journalEntries = [...state.journal];
-  const settlementDay = Math.min(state.daysTotal, state.day + 1);
+  let journalDay = Math.min(state.daysTotal, state.day + 1);
   function record(title: string, detail: string, delta?: JournalEntry['delta']) {
-    journalEntries.push({ id: `${settlementDay}:${journalEntries.length + 1}`, day: settlementDay,
+    journalEntries.push({ id: `${journalDay}:${journalEntries.length + 1}`, day: journalDay,
       title, detail, ...(delta ? { delta } : {}) });
   }
   record('存款利息', `存款 ${state.bank} 元，增加 ${bank - state.bank} 元`, { bank: bank - state.bank });
@@ -138,7 +137,8 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
 
   // The original game checks remaining days before advancing the current day.
   if (health < 85 && state.day < 38) {
-    hospitalDays = 1 + rng.int(2);
+    const hospitalDays = 1 + rng.int(2);
+    journalDay = Math.min(state.daysTotal, journalDay + hospitalDays);
     rng.int(29); // Location flavor text has no state effect, but consumes a roll.
     const bill = hospitalDays * (1000 + rng.int(8500));
     debt += bill;
@@ -186,7 +186,7 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
     }
   }
 
-  const day = Math.min(state.daysTotal, state.day + 1 + hospitalDays);
+  const day = journalDay;
   if (health >= 0 && day === state.daysTotal - 1 && state.day < day) {
     pendingEvents.push(systemEvent('departure-warning', 'Tomorrow is the last day in Beijing.'));
   }
