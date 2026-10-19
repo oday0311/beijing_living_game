@@ -1,5 +1,4 @@
 import { createContext, useContext } from 'react';
-import type { Dispatch } from 'react';
 import type { GameCommand, GameState, Mode } from '../engine/types';
 import type { LoadGameResult } from '../persistence/storage';
 
@@ -14,7 +13,7 @@ export interface GameSession {
   loadResult: LoadGameResult;
   storageAvailable: boolean;
   error: string | null;
-  dispatch: Dispatch<GameCommand>;
+  dispatch: (command: GameCommand) => boolean;
   startGame: (options: StartGameOptions) => void;
   continueGame: () => void;
   restoreSavedGame: () => void;

@@ -46,17 +46,21 @@ export function SubwayMap({ state, pack, disabled, onTravel }: {
         const current = station.id === state.locationId;
         const route = quote?.path.map((id) => pack.locations.find((place) => place.id === id)?.name ?? id).join(' → ');
         const lineDescription = quote?.lineIds.map(lineName).join(' → ');
+        const stationLines = station.lineIds.map(lineName).join('、');
         const position = positions[station.id];
         return <button key={station.id} type="button" className="subway-station"
           style={position && pack.mode === 'modern' ? { left: `${position[0]}%`, top: `${position[1]}%` } : undefined}
           aria-current={current ? 'location' : undefined}
-          aria-label={station.name}
+          aria-labelledby={`station-name-${station.id}`}
+          aria-describedby={`station-detail-${station.id}`}
+          aria-pressed={targetId === station.id}
           disabled={disabled || current || !quote}
           onClick={() => setTargetId(station.id)}>
           <span className="station-symbol" aria-hidden="true" style={{ borderColor: lineColors[station.lineIds[0]] }} />
-          <span className="station-copy"><strong>{station.name}</strong>
+          <span className="station-copy"><strong id={`station-name-${station.id}`}>{station.name}</strong>
             {station.lineIds.length > 1 && <em>换乘</em>}
-            {current ? <small>当前位置</small> : <small>路线：{route}；{lineDescription || '线路未标注'} · {quote?.transfers ?? 0} 次换乘 · 车费 ¥{quote?.fare ?? 0}{quote?.freeTransitUsed ? '（免票）' : ''}</small>}
+            {current ? <small id={`station-detail-${station.id}`}>当前位置；{station.lineIds.length > 1 ? '换乘站；' : ''}{stationLines}</small>
+              : <small id={`station-detail-${station.id}`}>{station.lineIds.length > 1 ? '换乘站；' : ''}线路：{stationLines}；路线：{route}；{lineDescription || '线路未标注'} · {quote?.transfers ?? 0} 次换乘 · 车费 ¥{quote?.fare ?? 0}{quote?.freeTransitUsed ? '（免票）' : ''}</small>}
           </span>
         </button>;
       })}

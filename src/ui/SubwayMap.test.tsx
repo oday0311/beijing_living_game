@@ -20,4 +20,17 @@ it('shows line markers, interchange stations and the current station', async () 
   await user.click(screen.getByRole('tab', { name: '城市' }));
   expect(screen.getByRole('button', { name: /西直门/ })).toHaveAttribute('aria-current', 'location');
   expect(screen.getByRole('button', { name: /海淀黄庄/ })).toHaveTextContent('换乘');
+  expect(screen.getByRole('button', { name: '海淀黄庄' })).toHaveAccessibleDescription(/换乘.*4号线.*车费/);
+  expect(screen.getByRole('button', { name: '西直门' })).toHaveAccessibleDescription(/当前位置.*4号线.*2号线/);
+});
+
+it('marks a destination selected only while its confirmation is open', async () => {
+  const { user } = renderAppWithState(modernState({ locationId: 'xizhimen' }));
+  await user.click(screen.getByRole('tab', { name: '城市' }));
+  const station = screen.getByRole('button', { name: '国贸' });
+  expect(station).toHaveAttribute('aria-pressed', 'false');
+  await user.click(station);
+  expect(station).toHaveAttribute('aria-pressed', 'true');
+  await user.click(screen.getByRole('button', { name: '取消' }));
+  expect(station).toHaveAttribute('aria-pressed', 'false');
 });

@@ -14,6 +14,7 @@
 .subway-connector { position: absolute; z-index: 1; height: 5px; transform-origin: left center; }
 .subway-station { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; width: 138px; min-height: 44px; padding: 4px 7px; border: 1px solid var(--art-border); border-radius: 2px; background: var(--art-white); color: var(--art-ink); text-align: left; transform: translate(-40%, -50%); box-shadow: 2px 2px 0 #17201f30; }
 .subway-station:hover:not(:disabled), .subway-station:focus-visible { border-color: var(--art-action); box-shadow: 0 0 0 2px var(--art-action); }
+.subway-station[aria-pressed='true'] { border-color: var(--art-action); background: var(--art-ticket); box-shadow: 0 0 0 3px var(--art-action); }
 .subway-station[aria-current='location'] { border-color: var(--art-action); background: var(--art-ticket); opacity: 1; }
 .station-symbol { width: 15px; height: 15px; flex: none; border: 4px solid; border-radius: 50%; background: var(--art-white); }
 .station-copy { display: block; min-width: 0; }
@@ -34,6 +35,8 @@
 .journal-filters { display: flex; gap: 3px; flex-wrap: wrap; padding: 13px 20px; border-bottom: 1px solid var(--art-border); }
 .journal-filters button { min-height: 36px; padding: 5px 10px; border: 1px solid transparent; border-radius: 2px; background: transparent; color: var(--art-ink); }
 .journal-filters button[aria-pressed='true'] { border-color: var(--art-panel); background: var(--art-panel); color: var(--art-white); }
+.journal-day-filter { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--art-border); padding: 10px 24px; font-size: .82rem; font-weight: 700; }
+.journal-day-filter select { min-width: 132px; min-height: 38px; border: 1px solid var(--art-border); border-radius: 2px; padding: 5px 9px; background: var(--art-white); color: var(--art-ink); font: inherit; }
 .journal-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 5px 24px 32px; }
 .journal-day h3 { margin: 23px 0 9px; border-bottom: 2px solid var(--art-success); padding-bottom: 7px; font-size: .92rem; }
 .journal-day ol { margin: 0; padding: 0; list-style: none; }
@@ -51,5 +54,6 @@
   .event-art { max-height: 34dvh; }
   .journal-header { padding: 14px 18px; }
   .journal-filters { padding: 10px 14px; }
+  .journal-day-filter { padding: 10px 18px; }
   .journal-scroll { padding-inline: 18px; }
 }

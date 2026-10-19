@@ -24,11 +24,14 @@ describe('GameProvider', () => {
     saveGame(initialState, storage);
     const { result } = renderHook(useGame, { wrapper: ({ children }: { children: ReactNode }) =>
       <GameProvider storage={storage} initialState={initialState}>{children}</GameProvider> });
-    act(() => result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }));
+    let applied = false;
+    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
+    expect(applied).toBe(true);
     const transferred = result.current.state;
     expect(transferred?.bank).toBe(60);
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: { bank: 60, cash: 90 } });
-    act(() => result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 999 }));
+    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 999 }); });
+    expect(applied).toBe(false);
     expect(result.current.state).toBe(transferred);
     expect(result.current.error).not.toBeNull();
     expect(loadGame(storage)).toMatchObject({ kind: 'ok', state: transferred });
@@ -45,7 +48,9 @@ describe('GameProvider', () => {
       if (key === CURRENT_SAVE_KEY) throw new Error('quota');
       setItem(key, value);
     };
-    act(() => result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }));
+    let applied = true;
+    act(() => { applied = result.current.dispatch({ type: 'TRANSFER', from: 'cash', to: 'bank', amount: 10 }); });
+    expect(applied).toBe(false);
     expect(result.current.state).toBe(initialState);
     expect(result.current.error).toMatch(/保存失败/);
   });

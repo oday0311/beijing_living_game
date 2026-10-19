@@ -76,6 +76,7 @@ export function AppContent({ storage }: { storage?: Storage }) {
     <button type="button" className="button button-link" onClick={() => setView('home')}><ArrowLeft size={16} /> 返回</button>
     <h1>关于北京浮生记</h1><p>四十天，一座城，两种年代。</p>
     <p>经典模式重现旧作规则；新北京模式讲述当代城市里的另一段日常。</p>
+    <p><a href="/licenses/lucide-license.txt">图标许可与版权说明</a></p>
   </div></main>;
 
   if (state) return <><GameShell onShowScores={() => setView('scores')} onShowAbout={() => setView('about')} />

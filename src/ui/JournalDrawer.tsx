@@ -56,14 +56,23 @@ export function JournalDrawer({ entries, pack, onClose, fallbackFocus }: {
   entries: JournalEntry[]; pack: ContentPack; onClose: () => void; fallbackFocus: RefObject<HTMLElement | null>;
 }) {
   const [filter, setFilter] = useState<JournalCategory>('全部');
+  const [dayFilter, setDayFilter] = useState('all');
   const ref = useRef<HTMLDivElement>(null);
   useModalFocus(ref, onClose, fallbackFocus);
-  const visible = entries.filter((entry) => filter === '全部' || journalCategory(entry, pack) === filter);
+  const availableDays = [...new Set(entries.map(({ day }) => day))].sort((a, b) => b - a);
+  const visible = entries.filter((entry) => (dayFilter === 'all' || entry.day === Number(dayFilter))
+    && (filter === '全部' || journalCategory(entry, pack) === filter));
   const days = [...new Set(visible.map(({ day }) => day))].sort((a, b) => b - a);
   return <div className="dialog-backdrop"><div ref={ref} className="journal-drawer" role="dialog" aria-modal="true" aria-labelledby="journal-title">
     <header className="journal-header"><h2 id="journal-title">旅程日记</h2><button type="button" onClick={onClose} aria-label="关闭日记" title="关闭日记"><X size={20} /></button></header>
     <div className="journal-filters" role="group" aria-label="日记类型">{categories.map((category) =>
       <button key={category} type="button" aria-pressed={filter === category} onClick={() => setFilter(category)}>{category}</button>)}</div>
+    <label className="journal-day-filter" htmlFor="journal-day-select">日期
+      <select id="journal-day-select" value={dayFilter} onChange={(event) => setDayFilter(event.target.value)}>
+        <option value="all">全部天数</option>
+        {availableDays.map((day) => <option key={day} value={day}>第 {day} 天</option>)}
+      </select>
+    </label>
     <div className="journal-scroll">{visible.length === 0 ? <p className="empty-note">暂无记录</p> : days.map((day) => <section key={day} className="journal-day">
       <h3>第 {day} 天</h3><ol>{visible.filter((entry) => entry.day === day).map((entry) => <li key={entry.id}>
         <span className="journal-type">{journalCategory(entry, pack)}</span><div><strong>{journalCopy(entry, pack).title}</strong><p>{journalCopy(entry, pack).detail}</p></div>

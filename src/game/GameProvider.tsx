@@ -62,17 +62,17 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
     }
   }, [storage, storageAvailable]);
 
-  const dispatch = useCallback((command: GameCommand) => {
+  const dispatch = useCallback((command: GameCommand): boolean => {
     const current = stateRef.current;
-    if (!current) return;
+    if (!current) return false;
     const pack = current.mode === 'classic' ? classicContent : modernContent;
     const result = reduceGameState(current, command, pack);
     if (!result.ok) {
       setError(commandErrors[result.error.code]);
-      return;
+      return false;
     }
-    if (result.state === current) return;
-    if (!persist(result.state)) return;
+    if (result.state === current) return false;
+    if (!persist(result.state)) return false;
     updateState(result.state);
     updateLoad({ kind: 'ok', state: result.state });
     setError(null);
@@ -94,6 +94,7 @@ export function GameProvider({ children, storage, initialState = null }: GamePro
         setError('成绩或存档清理失败，本局已保留。');
       }
     }
+    return true;
   }, [persist, storage, storageAvailable, updateLoad, updateState]);
 
   const startGame = useCallback((options: StartGameOptions) => {

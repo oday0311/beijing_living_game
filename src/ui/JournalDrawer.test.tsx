@@ -38,3 +38,21 @@ it('uses the content pack to classify market events without keyword matches', as
   expect(screen.getByRole('dialog', { name: '旅程日记' })).toHaveTextContent('咖啡节');
   expect(screen.getByRole('dialog', { name: '旅程日记' })).not.toHaveTextContent('换站');
 });
+
+it('combines the day selector and category filter', async () => {
+  const { user } = renderAppWithState(modernState({ journal: [
+    { id: '1:1', day: 1, title: '咖啡节', detail: '第一天行情。' },
+    { id: '2:1', day: 2, title: '热浪', detail: '第二天健康。', delta: { health: -4 } },
+    { id: '2:2', day: 2, title: '演出取消', detail: '第二天行情。' },
+  ] }));
+  await user.click(screen.getByRole('button', { name: '旅程日记' }));
+  await user.selectOptions(screen.getByRole('combobox', { name: '日期' }), '2');
+  await user.click(screen.getByRole('button', { name: '行情' }));
+  const dialog = screen.getByRole('dialog', { name: '旅程日记' });
+  expect(dialog).toHaveTextContent('第 2 天');
+  expect(dialog).toHaveTextContent('演出取消');
+  expect(dialog).not.toHaveTextContent('咖啡节');
+  expect(dialog).not.toHaveTextContent('热浪');
+  await user.selectOptions(screen.getByRole('combobox', { name: '日期' }), 'all');
+  expect(dialog).toHaveTextContent('咖啡节');
+});
