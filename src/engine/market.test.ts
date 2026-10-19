@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { classicContent } from '../content/classic';
+import { modernContent } from '../content/modern';
 import { stubPack, MaxRng, ScriptedRng, stateWith } from '../test/fixtures';
+import { applyWeather } from './modern';
 import { generateMarket, generateMarketWithAllPrices, inventoryCount } from './market';
 
 const context = { day: 1, trends: [], weatherId: null };
@@ -45,6 +47,13 @@ describe('market generation', () => {
     expect(prices.cosmetics).toBeUndefined();
     expect(allPrices.cosmetics).toBe(244);
     expect(rng.state).toBe(11);
+  });
+
+  it('applies the linked weather category trend once with station demand', () => {
+    const pack = { ...modernContent, goods: [{ id: 'coffee-beans', name: 'Coffee', category: 'drink', basePrice: 80, priceRange: 1 }] };
+    const state = applyWeather(stateWith({ locationId: 'haidianhuangzhuang' }),
+      modernContent.weather.find(({ id }) => id === 'heat')!, modernContent);
+    expect(generateMarket(pack, new MaxRng(), state)).toEqual({ 'coffee-beans': 140 });
   });
 });
 

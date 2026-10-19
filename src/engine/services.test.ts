@@ -72,11 +72,12 @@ describe('classic services', () => {
     expect(result.state).toBe(state);
   });
 
-  it('defers modern payment services to modern rules', () => {
+  it('uses modern repayment while deferring unrelated payment services', () => {
     const pack = { ...classicContent, mode: 'modern' as const };
     const state = stateWith({ mode: 'modern', cash: 100_000, debt: 1000, health: 90 });
+    expect(repayDebt(state, { amount: 100, account: 'cash' }, pack))
+      .toMatchObject({ ok: true, state: { cash: 99_900, debt: 900 } });
     for (const result of [
-      repayDebt(state, { amount: 100, account: 'cash' }, pack),
       heal(state, { points: 1, account: 'cash' }, pack),
       upgradeHousing(state, { account: 'cash' }, pack),
     ]) {

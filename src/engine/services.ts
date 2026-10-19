@@ -1,5 +1,6 @@
 import type { ContentPack } from '../content/contract';
 import { failure, success } from './command-result';
+import { advanceRepayments, borrowModern } from './modern';
 import type { CommandResult, GameCommand, GameState } from './types';
 
 type RepayCommand = Omit<Extract<GameCommand, { type: 'REPAY_DEBT' }>, 'type'>;
@@ -16,27 +17,34 @@ function cashOnly(state: GameState, account: string): CommandResult | null {
 }
 
 export function repayDebt(state: GameState, command: RepayCommand, pack: ContentPack): CommandResult {
-  if (pack.mode !== 'classic') {
-    return failure(state, 'FEATURE_UNAVAILABLE', 'Modern repayment rules are not available yet.');
-  }
   if (!validAmount(command.amount)) {
     return failure(state, 'INVALID_QUANTITY', 'Repayment must be a positive integer.');
   }
-  const accountError = cashOnly(state, command.account);
-  if (accountError) return accountError;
+  if (pack.mode === 'classic') {
+    const accountError = cashOnly(state, command.account);
+    if (accountError) return accountError;
+  } else if (!['cash', 'bank', 'wallet'].includes(command.account)) {
+    return failure(state, 'ACCOUNT_UNSUPPORTED', 'Unknown payment account.');
+  }
+  if (command.account === 'wallet' && state.walletFrozenDays > 0) {
+    return failure(state, 'WALLET_FROZEN', 'Wallet spending is temporarily frozen.');
+  }
   if (command.amount > state.debt) {
     return failure(state, 'INVALID_QUANTITY', 'Repayment cannot exceed debt.');
   }
-  if (command.amount > state.cash) {
-    return failure(state, 'INSUFFICIENT_FUNDS', 'Cash cannot cover this repayment.');
+  if (command.amount > state[command.account]) {
+    return failure(state, 'INSUFFICIENT_FUNDS', 'Account cannot cover this repayment.');
   }
-  return success(state, { cash: state.cash - command.amount, debt: state.debt - command.amount }, {
+  const repaid = pack.mode === 'modern' ? advanceRepayments(state, 1) : state;
+  return success(state, { [command.account]: state[command.account] - command.amount, debt: state.debt - command.amount,
+    credit: repaid.credit, modern: repaid.modern }, {
     title: 'Debt repayment', detail: `${command.amount}`,
-    delta: { cash: -command.amount, debt: -command.amount },
+    delta: { [command.account]: -command.amount, debt: -command.amount },
   });
 }
 
 export function borrow(state: GameState, command: BorrowCommand, pack: ContentPack): CommandResult {
+  if (pack.mode === 'modern') return borrowModern(state, command.amount);
   return failure(state, 'FEATURE_UNAVAILABLE', `Borrowing ${command.amount} is not available in ${pack.mode} mode.`);
 }
 

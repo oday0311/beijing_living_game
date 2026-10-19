@@ -23,10 +23,10 @@ describe('classic travel and settlement', () => {
       .toMatchObject({ ok: false, state, error: { code: 'UNKNOWN_LOCATION' } });
   });
 
-  it('does not apply classic settlement to the modern mode', () => {
+  it('advances a modern day through the modern rules', () => {
     const state = modernState();
     expect(travel(state, 'loc_b', stubPack, quietRolls()))
-      .toMatchObject({ ok: false, state, error: { code: 'FEATURE_UNAVAILABLE' } });
+      .toMatchObject({ ok: true, state: { day: 2, locationId: 'loc_b', cash: 97 } });
   });
 
   it('requires queued events to be acknowledged before another travel', () => {

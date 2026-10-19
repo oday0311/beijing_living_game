@@ -1,7 +1,8 @@
 import type { ContentPack } from '../content/contract';
 import type { GameState, RandomSource } from './types';
+import { applyTrends } from './modern';
 
-export type MarketContext = Pick<GameState, 'day' | 'trends' | 'weatherId'>;
+export type MarketContext = Pick<GameState, 'day' | 'trends' | 'weatherId'> & { locationId?: string | null };
 
 export function generateMarketWithAllPrices(
   pack: ContentPack,
@@ -10,7 +11,11 @@ export function generateMarketWithAllPrices(
 ): { prices: Record<string, number>; allPrices: Record<string, number> } {
   const prices: Record<string, number> = {};
   for (const good of pack.goods) {
-    prices[good.id] = good.basePrice + rng.int(good.priceRange);
+    const base = good.basePrice + rng.int(good.priceRange);
+    const demand = pack.mode === 'modern'
+      ? pack.locations.find(({ id }) => id === context.locationId)?.demand[good.category] ?? 1 : 1;
+    prices[good.id] = pack.mode === 'modern' && base > 0
+      ? applyTrends(base, good.category, context.trends, good.id, demand) : base;
   }
   const allPrices = { ...prices };
 

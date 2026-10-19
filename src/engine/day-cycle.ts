@@ -1,6 +1,7 @@
 import type { ContentPack, EventDefinition } from '../content/contract';
 import { failure } from './command-result';
 import { generateMarketWithAllPrices, inventoryCount } from './market';
+import { ageTrends, settleModernDay, travelCost } from './modern';
 import type { CommandResult, GameEvent, GameState, RandomSource } from './types';
 
 function visibleEvent(event: EventDefinition): GameEvent {
@@ -26,6 +27,25 @@ export function acknowledgeEvent(state: GameState): GameState {
 }
 
 export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource): GameState {
+  if (pack.mode === 'modern') {
+    const settled = settleModernDay(state, pack, rng);
+    const { prices: market } = generateMarketWithAllPrices(pack, rng, settled);
+    const day = Math.min(state.daysTotal, state.day + 1);
+    let cash = settled.cash;
+    let inventory = settled.inventory;
+    let pendingEvents = settled.pendingEvents;
+    let finalScore = settled.finalScore;
+    let status = settled.health < 0 ? 'lost' as const : settled.status;
+    if (day === state.daysTotal) {
+      cash += Object.entries(inventory).reduce((sum, [id, lot]) => sum + lot.quantity * (market[id] ?? 0), 0);
+      inventory = {};
+      finalScore = cash + settled.bank + settled.wallet - settled.debt;
+      status = settled.health >= 0 && finalScore > 0 ? 'won' : 'lost';
+      pendingEvents = [...pendingEvents, systemEvent('journey-complete', 'Forty days have passed.')];
+    }
+    return { ...settled, day, cash, inventory, market, pendingEvents, finalScore, status,
+      trends: ageTrends(settled.trends), rngState: rng.state };
+  }
   const { prices: market, allPrices } = generateMarketWithAllPrices(pack, rng, state);
   let cash = state.cash;
   let bank = state.bank + Math.trunc(state.bank * 0.01);
@@ -134,20 +154,35 @@ export function settleDay(state: GameState, pack: ContentPack, rng: RandomSource
 
 export function travel(state: GameState, targetId: string, pack: ContentPack, rng: RandomSource): CommandResult {
   if (state.status !== 'playing') return failure(state, 'GAME_ENDED', 'The game has ended.');
-  if (pack.mode !== 'classic') return failure(state, 'FEATURE_UNAVAILABLE', 'Modern day rules are not available yet.');
   if (state.pendingEvents.length > 0) return failure(state, 'EVENT_PENDING', 'Acknowledge pending events before travelling.');
   if (targetId === state.locationId) return failure(state, 'SAME_LOCATION', 'Choose another station.');
   if (!pack.locations.some((location) => location.id === targetId)) {
     return failure(state, 'UNKNOWN_LOCATION', 'This station does not exist.');
   }
-  const next = settleDay({ ...state, locationId: targetId }, pack, rng);
+  let departing = { ...state, locationId: targetId };
+  let fare = 0;
+  if (pack.mode === 'modern') {
+    try { fare = travelCost(pack, state.locationId ?? '', targetId, state.identityId); }
+    catch { return failure(state, 'UNKNOWN_LOCATION', 'No route to this station.'); }
+    const free = (state.modern?.freeTransitUses ?? 0) > 0;
+    if (free) fare = 0;
+    const weather = pack.weather.find(({ id }) => id === state.weatherId);
+    const weatherEvent = pack.events.health.find(({ id }) => id === weather?.eventId);
+    if (!free && weatherEvent?.effect.secondary?.kind === 'transit-fare-delta') {
+      fare += weatherEvent.effect.secondary.amount ?? 0;
+    }
+    if (state.cash < fare) return failure(state, 'INSUFFICIENT_FUNDS', 'Cash cannot cover transit fare.');
+    departing = { ...departing, cash: state.cash - fare,
+      modern: state.modern ? { ...state.modern, freeTransitUses: state.modern.freeTransitUses - (free ? 1 : 0) } : null };
+  }
+  const next = settleDay(departing, pack, rng);
   return {
     ok: true,
     state: {
       ...next,
       journal: [...state.journal, {
         id: `${state.day}:${state.journal.length + 1}`, day: state.day,
-        title: 'Travel', detail: targetId,
+        title: 'Travel', detail: targetId, delta: fare ? { cash: -fare } : undefined,
       }],
     },
   };

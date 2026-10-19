@@ -33,6 +33,9 @@ export function buy(state: GameState, command: BuyCommand, pack: ContentPack): C
   }
   const tradeError = marketTradeError(state, command.itemId, command.account, pack);
   if (tradeError) return tradeError;
+  if (command.account === 'wallet' && state.walletFrozenDays > 0) {
+    return failure(state, 'WALLET_FROZEN', 'Wallet spending is temporarily frozen.');
+  }
 
   const price = state.market[command.itemId];
   const cost = price * command.quantity;
@@ -93,6 +96,13 @@ export function transfer(state: GameState, command: TransferCommand): CommandRes
   if (state.mode === 'classic' && (command.from === 'wallet' || command.to === 'wallet')) {
     return failure(state, 'ACCOUNT_UNSUPPORTED', 'Classic transfers only support cash and bank.');
   }
+  if (command.from === 'wallet' && state.walletFrozenDays > 0) {
+    return failure(state, 'WALLET_FROZEN', 'Wallet spending is temporarily frozen.');
+  }
+  if (state.mode === 'modern' && (command.from === 'wallet' || command.to === 'wallet')
+    && (state.modern?.dailyWalletTransferred ?? 0) + command.amount > 10_000) {
+    return failure(state, 'TRANSFER_LIMIT', 'Daily wallet transfer limit exceeded.');
+  }
   if (state[command.from] < command.amount) {
     return failure(state, 'INSUFFICIENT_FUNDS', 'The source account cannot cover this transfer.');
   }
@@ -102,6 +112,9 @@ export function transfer(state: GameState, command: TransferCommand): CommandRes
   return success(state, {
     [command.from]: state[command.from] - command.amount,
     [command.to]: state[command.to] + command.amount,
+    modern: state.modern ? { ...state.modern,
+      dailyWalletTransferred: state.modern.dailyWalletTransferred
+        + (command.from === 'wallet' || command.to === 'wallet' ? command.amount : 0) } : null,
   }, {
     title: 'Transfer', detail: `${command.from} to ${command.to}`,
     delta: { [command.from]: -command.amount, [command.to]: command.amount },

@@ -11,7 +11,10 @@ export interface CreateGameOptions {
 
 export function createGame(pack: ContentPack, options: CreateGameOptions): GameState {
   const rng = new SeededRng(options.seed);
-  const market = generateMarket(pack, rng, { day: 1, trends: [], weatherId: null });
+  const market = generateMarket(pack, rng, { day: 1, trends: [], weatherId: null,
+    locationId: pack.initial.locationId });
+  const identity = pack.identities.find(({ id }) => id === options.identityId);
+  const capacityBonus = pack.mode === 'modern' && identity?.effect.kind === 'capacity' ? identity.effect.value : 0;
 
   return {
     schemaVersion: 1,
@@ -22,6 +25,7 @@ export function createGame(pack: ContentPack, options: CreateGameOptions): GameS
     day: 1,
     daysTotal: pack.daysTotal,
     ...pack.initial,
+    capacity: pack.initial.capacity + capacityBonus,
     inventory: {},
     market,
     weatherId: null,
@@ -33,7 +37,7 @@ export function createGame(pack: ContentPack, options: CreateGameOptions): GameS
       dailyWalletTransferred: 0,
       shopkeeperCapacityBonus: 0,
       freeTransitUses: 0,
-      revealTrendDaysBonus: 0,
+      revealTrendDaysBonus: identity?.effect.kind === 'trend-visibility' ? identity.effect.value : 0,
     } : null,
     pendingEvents: [],
     journal: [],
