@@ -150,3 +150,8 @@ button:disabled { cursor: not-allowed; opacity: .47; }
   .start-footer { flex-wrap: wrap; gap: 8px 20px; }
   .dialog-actions .button { min-width: 0; }
 }
+@media (max-width: 380px) {
+  .game-header { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; padding-block: 8px; }
+  .game-nav { justify-content: space-between; width: 100%; }
+  .game-nav button { min-width: 40px; }
+}

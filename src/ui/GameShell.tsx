@@ -82,8 +82,8 @@ export function GameShell({ onShowScores, onShowAbout, onShowHelp, onShowSetting
         <h1 ref={headingRef} tabIndex={-1}>{state.playerName}的北京日程</h1></div><span className="location-chip"><MapPin size={17} aria-hidden="true" /> {location?.name ?? '尚未出发'}</span></div>
       <StatusStrip state={state} pack={pack} />
       {state.status !== 'playing' && <section className="end-notice"><div><h2>{state.status === 'won' ? '这一程，收获颇丰' : '这一程，暂告一段落'}</h2>
-        <p>{state.finalScore === null ? '旅程已经结束。' : `最终得分：${state.finalScore.toLocaleString()}`}</p></div>
-        {state.finalScore !== null && <button type="button" className="button button-outline" onClick={onShowSettlement}>查看结算</button>}</section>}
+        <p>{state.finalScore === null ? '健康耗尽，旅程提前结束。' : `最终得分：${state.finalScore.toLocaleString()}`}</p></div>
+        <button type="button" className="button button-outline" onClick={onShowSettlement}>查看结算</button></section>}
       <div className="game-tabs" role="tablist" aria-label="游戏视图" onKeyDown={handleTabKeyDown}>
         {tabs.map(({ id, label }) => <button key={id} ref={(node) => { tabButtons.current[id] = node; }} id={`game-tab-${id}`}
           type="button" role="tab" aria-controls={`game-panel-${id}`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}

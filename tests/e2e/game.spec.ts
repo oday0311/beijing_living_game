@@ -4,6 +4,11 @@ import type { Page } from '@playwright/test';
 async function assertLayout(page: Page) {
   const metrics = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.width);
+  const lastButton = page.getByRole('navigation', { name: '页面导航' }).getByRole('button', { name: '返回入口' });
+  await expect(lastButton).toBeInViewport();
+  const lastNavButton = await lastButton.boundingBox();
+  expect(lastNavButton).not.toBeNull();
+  expect(lastNavButton!.x + lastNavButton!.width).toBeLessThanOrEqual(metrics.width);
   const overflowingButtons = await page.locator('button:visible').evaluateAll((buttons) => buttons
     .filter((button) => button.scrollWidth > button.clientWidth + 2 && !button.classList.contains('subway-station'))
     .map((button) => button.getAttribute('aria-label') || button.textContent?.trim()));
@@ -109,4 +114,29 @@ test('settings survive reload and an exported save can be restored after reset',
   await page.getByLabel('选择存档文件', { exact: true }).setInputFiles(exportPath!);
   await page.getByRole('button', { name: '确认导入' }).click();
   await expect(page.getByRole('heading', { name: '存档玩家的北京日程' })).toBeVisible();
+});
+
+test('an early loss settles without a fabricated score', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await page.getByLabel('角色姓名').fill('提前结束');
+  await page.getByRole('button', { name: '开始游戏' }).click();
+  await page.evaluate(() => {
+    const key = 'beijing-fushengji.save.v1';
+    const state = JSON.parse(localStorage.getItem(key)!);
+    localStorage.setItem(key, JSON.stringify({ ...state, day: 7, health: -1, status: 'lost', finalScore: null, pendingEvents: [] }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '继续游戏' }).click();
+  const settlement = page.getByRole('dialog', { name: '本局结算' });
+  await expect(settlement).toContainText('第 7 天');
+  await expect(settlement).toContainText('没有最终得分');
+  await expect(settlement).not.toContainText('本地排名');
+  await expect(settlement.getByRole('button', { name: '重新开始' })).toBeVisible();
+  await page.screenshot({ path: `test-results/early-loss-${testInfo.project.name}.png` });
+  await settlement.getByRole('button', { name: '查看棋盘' }).click();
+  await expect(page.getByRole('button', { name: '查看结算' })).toBeVisible();
+  await page.getByRole('button', { name: '查看结算' }).click();
+  await page.getByRole('dialog', { name: '本局结算' }).getByRole('button', { name: '返回入口' }).click();
+  await page.getByRole('button', { name: '本地排行榜' }).click();
+  await expect(page.getByRole('tabpanel', { name: '经典模式' })).toContainText('暂无成绩');
 });

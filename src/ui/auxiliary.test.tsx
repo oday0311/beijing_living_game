@@ -1,9 +1,10 @@
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { classicState, memoryStorage } from '../test/fixtures';
 import { renderAppWithState, renderGame } from '../test/render-game';
-import { AppContent } from '../App';
-import { loadSettings, recordScore } from '../persistence/storage';
+import { App, AppContent } from '../App';
+import { loadScores, loadSettings, recordScore, SETTINGS_KEY } from '../persistence/storage';
 
 afterEach(cleanup);
 
@@ -50,5 +51,48 @@ describe('auxiliary views', () => {
     await user.click(screen.getByRole('button', { name: '帮助' }));
     expect(screen.getByRole('dialog', { name: '游戏帮助' })).toHaveTextContent('40 天');
     expect(screen.getByRole('dialog', { name: '游戏帮助' })).toHaveTextContent('自动保存');
+  });
+
+  it('settles an early loss without inventing a score or ranking', async () => {
+    const state = classicState({ day: 7, status: 'lost', health: -1, finalScore: null, pendingEvents: [] });
+    const { user, storage } = renderAppWithState(state);
+    const settlement = screen.getByRole('dialog', { name: '本局结算' });
+    expect(settlement).toHaveTextContent('第 7 天');
+    expect(settlement).toHaveTextContent('健康');
+    expect(settlement).not.toHaveTextContent('本地排名');
+    expect(loadScores(storage).classic).toHaveLength(0);
+    expect(within(settlement).getByRole('button', { name: '重新开始' })).toBeEnabled();
+    await user.click(within(settlement).getByRole('button', { name: '返回入口' }));
+    expect(screen.getByRole('button', { name: '继续游戏' })).toBeInTheDocument();
+  });
+
+  it('keeps failed settings changes in memory and reports that they were not saved', async () => {
+    const storage = memoryStorage();
+    const originalSetItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === SETTINGS_KEY) throw new Error('quota');
+      originalSetItem(key, value);
+    };
+    const { user, container } = renderGame(classicState(), <AppContent storage={storage} />, storage);
+    await user.click(screen.getByRole('button', { name: '设置' }));
+    const dialog = screen.getByRole('dialog', { name: '设置' });
+    await user.click(within(dialog).getByRole('checkbox', { name: '音效' }));
+    await user.click(within(dialog).getByRole('checkbox', { name: '动态效果' }));
+    await user.click(within(dialog).getByRole('checkbox', { name: '紧凑显示' }));
+    expect(within(dialog).getByRole('checkbox', { name: '音效' })).not.toBeChecked();
+    expect(container.querySelector('.reduced-motion.compact-display')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('未保存');
+    expect(loadSettings(storage)).toMatchObject({ soundEnabled: true, animationsEnabled: true, compactDisplay: false });
+  });
+
+  it('keeps sound changes for this session when browser storage is unavailable', async () => {
+    const unavailable = memoryStorage();
+    unavailable.getItem = () => { throw new Error('unavailable'); };
+    unavailable.setItem = () => { throw new Error('unavailable'); };
+    const user = userEvent.setup();
+    render(<App storage={unavailable} initialState={classicState()} />);
+    await user.click(screen.getByRole('button', { name: '关闭音效' }));
+    expect(screen.getByRole('button', { name: '开启音效' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('alert')).toHaveTextContent('未保存');
   });
 });

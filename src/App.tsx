@@ -79,12 +79,16 @@ export function AppContent({ storage }: { storage?: Storage }) {
   const saved = state ?? (loadResult.kind === 'ok' ? loadResult.state : null);
   const scores = view === 'scores' || (state && state.status !== 'playing' && state.finalScore !== null) ? loadScores(storage) : null;
   function updateSettings(next: GameSettings) {
+    setSettings(next);
+    if (!storageAvailable) {
+      setSettingsError('设置已在本次会话生效，但未保存；刷新页面后会恢复上次设置。');
+      return;
+    }
     try {
       saveSettings(next, storage);
-      setSettings(next);
       setSettingsError(null);
     } catch {
-      setSettingsError('设置无法保存，请检查浏览器存储权限。');
+      setSettingsError('设置已在本次会话生效，但未保存；刷新页面后会恢复上次设置。');
     }
   }
   function exportSave() {
@@ -112,7 +116,7 @@ export function AppContent({ storage }: { storage?: Storage }) {
     onShowScores={() => setView('scores')} onShowAbout={() => setView('about')} onShowHelp={() => setView('help')} onShowSettings={() => setView('settings')}
     soundEnabled={settings.soundEnabled} onToggleSound={() => updateSettings({ ...settings, soundEnabled: !settings.soundEnabled })}
     onShowSettlement={() => setSettlementDismissed(false)} />
-    {state.status !== 'playing' && state.finalScore !== null && state.pendingEvents.length === 0 && !view && !settlementDismissed &&
+    {state.status !== 'playing' && state.pendingEvents.length === 0 && !view && !settlementDismissed &&
       <EndGameDialog state={state} scores={scores ?? loadScores(storage)} onClose={() => setSettlementDismissed(true)}
         onReturn={() => { setSettlementDismissed(true); returnToStart(); }}
         onRestart={() => { setSettlementDismissed(false); abandonGame(); }} />}

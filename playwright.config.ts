@@ -6,6 +6,7 @@ export default defineConfig({
     { name: 'desktop-1440', use: { viewport: { width: 1440, height: 1000 } } },
     { name: 'tablet-768', use: { viewport: { width: 768, height: 1024 } } },
     { name: 'mobile-390', use: { viewport: { width: 390, height: 844 } } },
+    { name: 'mobile-320', use: { viewport: { width: 320, height: 700 } } },
   ],
   use: {
     baseURL: 'http://127.0.0.1:4173',
